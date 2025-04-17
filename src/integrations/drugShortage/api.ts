@@ -1,3 +1,4 @@
+
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -56,8 +57,10 @@ interface ErrorResponse {
 // Check if Edge Function is accessible
 const canAccessApi = async (): Promise<boolean> => {
   try {
+    // Use HEAD method instead of OPTIONS since it's not supported in the type
     const { error } = await supabase.functions.invoke('drug-shortage-api', {
-      method: 'OPTIONS'
+      method: 'GET',
+      body: { checkOnly: true }
     });
     
     return !error;
@@ -87,11 +90,9 @@ export const searchDrugShortages = async (
     // Call our Edge Function
     const { data, error } = await supabase.functions.invoke('drug-shortage-api', {
       method: 'GET',
-      query: { 
+      body: { 
+        action: 'search',
         term: drugName 
-      },
-      headers: { 
-        path: 'search' 
       }
     });
     
@@ -99,9 +100,11 @@ export const searchDrugShortages = async (
     
     // Check if it's an error response
     if ((data as ErrorResponse).error) {
-      throw new Error(typeof (data as ErrorResponse).error === 'string' 
-        ? (data as ErrorResponse).error as string 
-        : (data as ErrorResponse).error.en);
+      const errorData = (data as ErrorResponse).error;
+      const errorMessage = typeof errorData === 'string' 
+        ? errorData 
+        : errorData.en;
+      throw new Error(errorMessage);
     }
 
     return (data as ApiResponse<DrugShortageSearchResult>).data;
@@ -133,11 +136,9 @@ export const getDrugShortageReport = async (
     // Call our Edge Function
     const { data, error } = await supabase.functions.invoke('drug-shortage-api', {
       method: 'GET',
-      query: { 
+      body: { 
+        action: type === 'shortage' ? 'shortage' : 'discontinuance',
         reportId 
-      },
-      headers: { 
-        path: type === 'shortage' ? 'shortage' : 'discontinuance'
       }
     });
     
@@ -145,9 +146,11 @@ export const getDrugShortageReport = async (
     
     // Check if it's an error response
     if ((data as ErrorResponse).error) {
-      throw new Error(typeof (data as ErrorResponse).error === 'string' 
-        ? (data as ErrorResponse).error as string 
-        : (data as ErrorResponse).error.en);
+      const errorData = (data as ErrorResponse).error;
+      const errorMessage = typeof errorData === 'string' 
+        ? errorData 
+        : errorData.en;
+      throw new Error(errorMessage);
     }
 
     return data as DrugShortageReport;

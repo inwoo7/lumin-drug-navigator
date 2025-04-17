@@ -40,8 +40,10 @@ const EnvironmentDebugger = () => {
   const checkEdgeFunction = async () => {
     setEdgeFunctionStatus('loading');
     try {
+      // Use HEAD method instead of OPTIONS since it's not supported in the type
       const { error } = await supabase.functions.invoke('drug-shortage-api', {
-        method: 'OPTIONS',
+        method: 'GET',
+        body: { checkOnly: true }
       });
       
       setEdgeFunctionStatus(error ? 'unavailable' : 'available');

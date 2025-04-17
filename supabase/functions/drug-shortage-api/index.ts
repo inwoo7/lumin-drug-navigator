@@ -60,9 +60,6 @@ serve(async (req) => {
   }
 
   try {
-    const url = new URL(req.url);
-    const path = url.pathname.split('/').pop();
-    
     // Get API credentials from Supabase secrets
     const email = Deno.env.get("VITE_DRUG_SHORTAGE_API_EMAIL");
     const password = Deno.env.get("VITE_DRUG_SHORTAGE_API_PASSWORD");
@@ -78,18 +75,43 @@ serve(async (req) => {
     }
 
     // Parse request body
-    let requestParams = {};
-    if (req.method === "POST") {
+    let requestParams: any = {};
+    
+    // Handle status check for the Edge Function
+    if (req.method === "GET") {
+      // Check if this is just a health check
+      const url = new URL(req.url);
+      
+      // If no search params and no body content, it's a health check
+      if (url.search === '' && req.headers.get('content-length') === '0') {
+        return new Response(
+          JSON.stringify({ status: "ok" }),
+          { 
+            headers: { ...corsHeaders, "Content-Type": "application/json" } 
+          }
+        );
+      }
+    }
+    
+    // Parse the request body for all non-OPTIONS requests
+    if (req.method !== "OPTIONS" && req.headers.get('content-length') !== '0') {
       requestParams = await req.json();
     }
-
-    // Get query parameters
-    const queryParams = Object.fromEntries(url.searchParams.entries());
     
-    // Handle different API endpoints
-    if (path === "search") {
+    // Simple health check if checkOnly is true
+    if (requestParams.checkOnly) {
+      return new Response(
+        JSON.stringify({ status: "ok" }),
+        { 
+          headers: { ...corsHeaders, "Content-Type": "application/json" } 
+        }
+      );
+    }
+    
+    // Handle different API endpoints based on the action in the request body
+    if (requestParams.action === "search") {
       const token = await login(email, password);
-      const term = queryParams.term || "";
+      const term = requestParams.term || "";
       
       const apiResponse = await fetch(
         `https://www.drugshortagescanada.ca/api/v1/search?term=${encodeURIComponent(term)}&orderby=updated_date&order=desc`,
@@ -110,12 +132,12 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" } 
         }
       );
-    } else if (path === "shortage" || path === "discontinuance") {
+    } else if (requestParams.action === "shortage" || requestParams.action === "discontinuance") {
       const token = await login(email, password);
-      const reportId = queryParams.reportId || "";
+      const reportId = requestParams.reportId || "";
       
       // Determine the endpoint based on the report type
-      const endpoint = path === 'shortage' ? 'shortages' : 'discontinuances';
+      const endpoint = requestParams.action === 'shortage' ? 'shortages' : 'discontinuances';
       
       const apiResponse = await fetch(
         `https://www.drugshortagescanada.ca/api/v1/${endpoint}/${reportId}`,
@@ -138,9 +160,9 @@ serve(async (req) => {
       );
     }
 
-    // Default response for unhandled paths
+    // Default response for unhandled actions
     return new Response(
-      JSON.stringify({ error: "Invalid endpoint" }),
+      JSON.stringify({ error: "Invalid action specified" }),
       { 
         status: 400, 
         headers: { ...corsHeaders, "Content-Type": "application/json" } 
