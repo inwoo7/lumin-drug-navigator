@@ -9,16 +9,22 @@ import {
   DrugShortageSearchResult,
   DrugShortageReport
 } from "@/integrations/drugShortage/api";
+import { toast } from "sonner";
 
 // Check if we have API credentials in the environment
 const hasApiCredentials = () => {
-  console.log("Checking API credentials:", 
-    !!import.meta.env.VITE_DRUG_SHORTAGE_API_EMAIL, 
-    !!import.meta.env.VITE_DRUG_SHORTAGE_API_PASSWORD
-  );
+  // Get the environment variables
+  const email = import.meta.env.VITE_DRUG_SHORTAGE_API_EMAIL;
+  const password = import.meta.env.VITE_DRUG_SHORTAGE_API_PASSWORD;
   
-  return !!import.meta.env.VITE_DRUG_SHORTAGE_API_EMAIL && 
-         !!import.meta.env.VITE_DRUG_SHORTAGE_API_PASSWORD;
+  console.log("API credentials check:", {
+    emailExists: !!email,
+    passwordExists: !!password,
+    emailValue: email ? "exists" : "missing",
+    passwordValue: password ? "exists" : "missing"
+  });
+  
+  return !!email && !!password;
 };
 
 // Get API credentials from environment variables
@@ -37,16 +43,18 @@ export const useDrugShortageSearch = (drugName: string) => {
       
       try {
         if (hasApiCredentials()) {
-          console.log("Using actual API with credentials");
+          console.log("Using actual API with credentials for drug:", drugName);
           // Use real API if credentials are available
           return await searchDrugShortages(drugName, getApiCredentials());
         } else {
           console.warn('Using mock drug shortage data (API credentials not found)');
+          toast.error("API credentials not found. Using mock data.");
           // Fall back to mock data
           return await mockSearchDrugShortages(drugName);
         }
       } catch (err) {
         console.error('Error searching drug shortages:', err);
+        toast.error("Error fetching drug shortage data. Using mock data.");
         // Fall back to mock data on error
         return await mockSearchDrugShortages(drugName);
       }
@@ -73,16 +81,18 @@ export const useDrugShortageReport = (
       
       try {
         if (hasApiCredentials()) {
-          console.log("Using actual API with credentials for report", reportId);
+          console.log("Using actual API with credentials for report:", reportId);
           // Use real API if credentials are available
           return await getDrugShortageReport(reportId, type, getApiCredentials());
         } else {
           console.warn('Using mock drug shortage report (API credentials not found)');
+          toast.error("API credentials not found. Using mock data.");
           // Fall back to mock data
           return await mockGetDrugShortageReport(reportId, type);
         }
       } catch (err) {
         console.error('Error fetching drug shortage report:', err);
+        toast.error("Error fetching drug shortage report. Using mock data.");
         // Fall back to mock data on error
         return await mockGetDrugShortageReport(reportId, type);
       }

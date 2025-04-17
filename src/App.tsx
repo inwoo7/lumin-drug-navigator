@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -11,11 +10,11 @@ import SessionPage from "./pages/SessionPage";
 import HistoryPage from "./pages/HistoryPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import AppLayout from "./components/layout/AppLayout";
+import EnvironmentDebugger from "./components/debug/EnvironmentDebugger";
 import { useState, useEffect } from "react";
 
 const queryClient = new QueryClient();
 
-// Protected route wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   
@@ -59,18 +58,15 @@ const App = () => {
   const [isSupabaseLoaded, setIsSupabaseLoaded] = useState(false);
   
   useEffect(() => {
-    // Check if Supabase credentials are loaded
     const checkSupabaseConfig = () => {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
       
-      // In a real app, we would check if these are valid
-      // For now, let's assume they are valid if they exist
       if (supabaseUrl && supabaseKey) {
         setIsSupabaseLoaded(true);
       } else {
         console.warn("Supabase configuration not found. Using mock data.");
-        setIsSupabaseLoaded(true); // For demo purposes
+        setIsSupabaseLoaded(true);
       }
     };
     
@@ -97,6 +93,7 @@ const App = () => {
           <BrowserRouter>
             <InnerApp />
           </BrowserRouter>
+          <EnvironmentDebugger />
         </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>
