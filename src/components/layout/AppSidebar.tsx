@@ -12,11 +12,12 @@ import {
   MenuIcon,
   PillIcon,
   SettingsIcon,
-  XIcon
+  XIcon,
+  UserIcon
 } from "lucide-react";
 
 const AppSidebar = () => {
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
   const location = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
@@ -118,6 +119,12 @@ const AppSidebar = () => {
             </nav>
             
             <div className="border-t p-4">
+              {user && (
+                <div className="text-sm text-gray-600 mb-2 flex items-center">
+                  <UserIcon className="mr-2 h-4 w-4" />
+                  {user.email}
+                </div>
+              )}
               <Button
                 variant="ghost"
                 className="w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-50"
@@ -157,6 +164,12 @@ const AppSidebar = () => {
         </nav>
         
         <div className="border-t p-4">
+          {user && (
+            <div className="text-sm text-gray-600 mb-2 flex items-center">
+              <UserIcon className="mr-2 h-4 w-4" />
+              {user.email}
+            </div>
+          )}
           <Button
             variant="ghost"
             className="w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-50"
