@@ -6,8 +6,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { SearchIcon, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useDrugShortageSearch } from "@/hooks/use-drug-shortages";
+import { toast } from "sonner";
 
-// Mock drug list for demonstration until API integration
+// Mock drug list for initial suggestions
 const mockDrugs = [
   "Atorvastatin",
   "Lisinopril",
@@ -38,6 +40,11 @@ const DrugSearch = () => {
   const [isFocused, setIsFocused] = useState(false);
   const navigate = useNavigate();
   const searchRef = useRef<HTMLDivElement>(null);
+  
+  // Use our hook to prefetch drug shortage data when the user types
+  const { shortages, isLoading: isShortageLoading } = useDrugShortageSearch(
+    searchQuery.length > 2 ? searchQuery : "" // Only search if we have at least 3 characters
+  );
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -58,13 +65,22 @@ const DrugSearch = () => {
       return;
     }
 
-    // In a real implementation, this would be an API call to the backend
+    // Filter the mock drugs list for suggestions
     const filteredDrugs = mockDrugs.filter(drug =>
       drug.toLowerCase().includes(searchQuery.toLowerCase())
     );
     
-    setSuggestions(filteredDrugs);
-  }, [searchQuery]);
+    // If we have shortage data, add those drug names to suggestions if they're not already there
+    if (shortages.length > 0) {
+      const shortageNames = shortages.map(s => s.brand_name);
+      
+      // Combine and deduplicate
+      const combinedSuggestions = [...new Set([...filteredDrugs, ...shortageNames])];
+      setSuggestions(combinedSuggestions);
+    } else {
+      setSuggestions(filteredDrugs);
+    }
+  }, [searchQuery, shortages]);
 
   const handleSearch = async (drug: string) => {
     setIsLoading(true);
@@ -82,12 +98,13 @@ const DrugSearch = () => {
       
       // Navigate to the session page with the new session ID
       if (data && data[0]) {
+        toast.success(`Searching for information on ${drug}`);
         navigate(`/session/${data[0].id}`, { state: { drugName: drug } });
       }
     } catch (error) {
       console.error("Error creating session:", error);
-      // In a production app, we would handle this error properly
-      // For now, let's just navigate with a mock ID
+      toast.error("Error creating session");
+      // In case of error, still navigate but with a temporary ID
       navigate(`/session/new`, { state: { drugName: drug } });
     } finally {
       setIsLoading(false);
