@@ -8,34 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 const EnvironmentDebugger = () => {
   const [visible, setVisible] = useState(false);
-  const [envVars, setEnvVars] = useState({
-    hasApiEmail: false,
-    hasApiPassword: false,
-    emailValue: "",
-    passwordValue: ""
-  });
-  const [edgeFunctionStatus, setEdgeFunctionStatus] = useState<'loading' | 'available' | 'unavailable' | 'authenticated'>('loading');
-  
-  const checkEnvVars = () => {
-    // Check if drug shortage API credentials exist
-    const email = import.meta.env.VITE_DRUG_SHORTAGE_API_EMAIL;
-    const password = import.meta.env.VITE_DRUG_SHORTAGE_API_PASSWORD;
-    
-    setEnvVars({
-      hasApiEmail: !!email,
-      hasApiPassword: !!password,
-      emailValue: email ? email.substring(0, 3) + "..." : "Not set",
-      passwordValue: password ? "********" : "Not set"
-    });
-    
-    // Log for debugging
-    console.log("Environment variables check:", {
-      email: email ? "Found" : "Not found", 
-      password: password ? "Found" : "Not found",
-      emailValue: email ? `${email.substring(0, 3)}...` : "missing",
-      passwordValue: password ? "exists" : "missing"
-    });
-  };
+  const [edgeFunctionStatus, setEdgeFunctionStatus] = useState<'loading' | 'available' | 'authenticated' | 'unavailable'>('loading');
   
   const checkEdgeFunction = async () => {
     setEdgeFunctionStatus('loading');
@@ -65,9 +38,8 @@ const EnvironmentDebugger = () => {
     }
   };
   
-  // Check environment variables and Edge Function on mount
+  // Check Edge Function on mount
   useEffect(() => {
-    checkEnvVars();
     checkEdgeFunction();
   }, []);
   
@@ -88,17 +60,16 @@ const EnvironmentDebugger = () => {
     <Card className="fixed bottom-4 right-4 z-50 w-96 shadow-lg">
       <CardHeader className="pb-2">
         <div className="flex justify-between items-center">
-          <CardTitle className="text-sm">Environment Variables</CardTitle>
+          <CardTitle className="text-sm">Environment Debugger</CardTitle>
           <div className="flex gap-2">
             <Button 
               variant="ghost" 
               size="sm" 
               onClick={() => {
-                checkEnvVars();
                 checkEdgeFunction();
                 toast.info("Environment refreshed");
               }}
-              title="Refresh environment variables"
+              title="Refresh environment status"
             >
               <RefreshCw className="h-4 w-4" />
             </Button>
@@ -115,22 +86,6 @@ const EnvironmentDebugger = () => {
       <CardContent className="text-xs space-y-3">
         <div className="space-y-2">
           <h3 className="font-medium">Drug Shortage API</h3>
-          <div className="flex items-center space-x-2">
-            {envVars.hasApiEmail ? (
-              <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
-            ) : (
-              <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
-            )}
-            <span className="flex-1">VITE_DRUG_SHORTAGE_API_EMAIL: {envVars.emailValue}</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            {envVars.hasApiPassword ? (
-              <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
-            ) : (
-              <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
-            )}
-            <span className="flex-1">VITE_DRUG_SHORTAGE_API_PASSWORD: {envVars.passwordValue}</span>
-          </div>
           
           <div className="flex items-center space-x-2 mt-2">
             {edgeFunctionStatus === 'authenticated' ? (
@@ -183,13 +138,30 @@ const EnvironmentDebugger = () => {
             </div>
           </div>
           
+          {edgeFunctionStatus === 'available' && (
+            <div className="pt-2 bg-amber-50 p-3 rounded-md border border-amber-200">
+              <p className="font-medium text-amber-800 mb-1">API Credentials Missing:</p>
+              <p className="text-amber-700 text-xs">
+                The Edge Function can't connect to the Drug Shortages Canada API because it's missing credentials.
+                You need to add the API credentials to your Supabase secrets.
+              </p>
+              <a 
+                href="https://supabase.com/dashboard/project/oeazqjeopkepqynrqsxj/settings/functions" 
+                target="_blank"
+                className="text-amber-600 hover:underline flex items-center mt-1 text-xs"
+              >
+                Add Secrets in Supabase
+                <ExternalLink className="h-3 w-3 ml-1" />
+              </a>
+            </div>
+          )}
+          
           <div className="pt-2 bg-yellow-50 p-3 rounded-md border border-yellow-200">
             <p className="font-medium text-yellow-800 mb-1">Troubleshooting Tips:</p>
             <ul className="list-disc pl-4 mt-1 space-y-1 text-yellow-700">
-              <li>Environment variables <b>must</b> start with "VITE_"</li>
-              <li>You need to restart the dev server after adding variables</li>
+              <li>Edge Function uses your API credentials stored in Supabase secrets</li>
+              <li>Add <b>VITE_DRUG_SHORTAGE_API_EMAIL</b> and <b>VITE_DRUG_SHORTAGE_API_PASSWORD</b> as secrets</li>
               <li>If the Edge Function is unavailable, it may be still deploying</li>
-              <li>The Edge Function uses your API credentials stored in Supabase secrets</li>
               <li>Check Edge Function logs for detailed error information</li>
             </ul>
           </div>

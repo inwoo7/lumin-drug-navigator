@@ -1,5 +1,4 @@
 
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   searchDrugShortages,
@@ -11,39 +10,6 @@ import {
 } from "@/integrations/drugShortage/api";
 import { toast } from "sonner";
 
-// Check if we have API credentials in the environment
-const hasApiCredentials = () => {
-  // Get the environment variables
-  const email = import.meta.env.VITE_DRUG_SHORTAGE_API_EMAIL;
-  const password = import.meta.env.VITE_DRUG_SHORTAGE_API_PASSWORD;
-  
-  console.log("API credentials check:", {
-    emailExists: !!email,
-    passwordExists: !!password
-  });
-  
-  return !!email && !!password;
-};
-
-// Get API credentials from environment variables
-const getApiCredentials = () => {
-  const email = import.meta.env.VITE_DRUG_SHORTAGE_API_EMAIL;
-  const password = import.meta.env.VITE_DRUG_SHORTAGE_API_PASSWORD;
-  
-  if (!email || !password) {
-    toast.error("Missing API credentials. Using mock data instead.", {
-      id: "missing-credentials",
-      duration: 5000
-    });
-    console.warn("Missing API credentials. Using mock data instead.");
-  }
-  
-  return {
-    email: email as string,
-    password: password as string,
-  };
-};
-
 export const useDrugShortageSearch = (drugName: string) => {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['drugShortages', drugName],
@@ -52,27 +18,26 @@ export const useDrugShortageSearch = (drugName: string) => {
       
       try {
         console.log(`Searching for drug shortages: "${drugName}"`);
-        if (hasApiCredentials()) {
-          console.log("Using Edge Function with credentials for drug:", drugName);
-          // Use our Edge Function to access the API
-          const results = await searchDrugShortages(drugName, getApiCredentials());
-          console.log(`Found ${results.length} shortages for "${drugName}"`);
-          return results;
-        } else {
-          console.warn('Using mock drug shortage data (API credentials not found)');
-          toast.info("Using sample drug shortage data", {
-            id: "mock-data-notice",
-            duration: 3000
-          });
-          // Fall back to mock data
-          return await mockSearchDrugShortages(drugName);
-        }
-      } catch (err) {
+        // Use Edge Function to access the API
+        const results = await searchDrugShortages(drugName);
+        console.log(`Found ${results.length} shortages for "${drugName}"`);
+        return results;
+      } catch (err: any) {
         console.error('Error searching drug shortages:', err);
-        toast.error("Error fetching drug shortage data. Using mock data.", {
-          id: "api-error",
-          duration: 5000
-        });
+        
+        // Check if the error is due to missing credentials
+        if (err.missingCredentials) {
+          toast.error("API credentials not configured. Using mock data.", {
+            id: "missing-credentials",
+            duration: 5000
+          });
+        } else {
+          toast.error("Error fetching drug shortage data. Using mock data.", {
+            id: "api-error",
+            duration: 5000
+          });
+        }
+        
         // Fall back to mock data on error
         return await mockSearchDrugShortages(drugName);
       }
@@ -101,27 +66,26 @@ export const useDrugShortageReport = (
       
       try {
         console.log(`Fetching ${type} report: ${reportId}`);
-        if (hasApiCredentials()) {
-          console.log("Using Edge Function with credentials for report:", reportId);
-          // Use our Edge Function to access the API
-          const report = await getDrugShortageReport(reportId, type, getApiCredentials());
-          console.log(`Successfully retrieved ${type} report for ID ${reportId}`);
-          return report;
-        } else {
-          console.warn('Using mock drug shortage report (API credentials not found)');
-          toast.info("Using sample shortage report data", {
-            id: "mock-report-notice",
-            duration: 3000
-          });
-          // Fall back to mock data
-          return await mockGetDrugShortageReport(reportId, type);
-        }
-      } catch (err) {
+        // Use Edge Function to access the API
+        const report = await getDrugShortageReport(reportId, type);
+        console.log(`Successfully retrieved ${type} report for ID ${reportId}`);
+        return report;
+      } catch (err: any) {
         console.error('Error fetching drug shortage report:', err);
-        toast.error("Error fetching drug shortage report. Using mock data.", {
-          id: "report-api-error",
-          duration: 5000
-        });
+        
+        // Check if the error is due to missing credentials
+        if (err.missingCredentials) {
+          toast.error("API credentials not configured. Using mock data.", {
+            id: "missing-credentials",
+            duration: 5000
+          });
+        } else {
+          toast.error("Error fetching drug shortage report. Using mock data.", {
+            id: "report-api-error",
+            duration: 5000
+          });
+        }
+        
         // Fall back to mock data on error
         return await mockGetDrugShortageReport(reportId, type);
       }

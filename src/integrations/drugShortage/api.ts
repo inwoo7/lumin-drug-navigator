@@ -47,40 +47,64 @@ interface ApiResponse<T> {
   total_pages: number;
 }
 
-interface ErrorResponse {
-  error: {
-    en: string;
-    fr: string;
-  } | string;
+interface EdgeFunctionError {
+  error: string;
+  missingCredentials?: boolean;
 }
 
 // Check if Edge Function is accessible
-const canAccessApi = async (): Promise<boolean> => {
+const canAccessApi = async (): Promise<{available: boolean; authenticated: boolean}> => {
   try {
-    // Use HEAD method instead of OPTIONS since it's not supported in the type
-    const { error } = await supabase.functions.invoke('drug-shortage-api', {
-      method: 'GET',
+    const { data, error } = await supabase.functions.invoke('drug-shortage-api', {
+      method: 'POST',
       body: { checkOnly: true }
     });
     
-    return !error;
+    if (error) {
+      console.error("Error checking Edge Function accessibility:", error);
+      return { available: false, authenticated: false };
+    }
+    
+    return { 
+      available: true, 
+      authenticated: data?.hasCredentials === true 
+    };
   } catch (error) {
     console.error("Error checking Edge Function accessibility:", error);
-    return false;
+    return { available: false, authenticated: false };
   }
 };
 
+// Custom error with missing credentials flag
+class ApiError extends Error {
+  missingCredentials: boolean;
+  
+  constructor(message: string, missingCredentials: boolean = false) {
+    super(message);
+    this.missingCredentials = missingCredentials;
+  }
+}
+
 // Search for drug shortage reports
 export const searchDrugShortages = async (
-  drugName: string,
-  apiCredentials: { email: string; password: string }
+  drugName: string
 ): Promise<DrugShortageSearchResult[]> => {
   try {
     // Check if we can access the Edge Function
-    const canAccess = await canAccessApi();
+    const { available, authenticated } = await canAccessApi();
     
-    if (!canAccess) {
+    if (!available) {
       console.warn("Edge Function not accessible. Using mock data instead.");
+      // Fall back to mock data
+      return mockSearchDrugShortages(drugName);
+    }
+    
+    if (!authenticated) {
+      console.warn("Edge Function doesn't have API credentials. Using mock data instead.");
+      toast.info("Using sample drug shortage data (API credentials not found)", {
+        id: "mock-data-notice",
+        duration: 3000
+      });
       // Fall back to mock data
       return mockSearchDrugShortages(drugName);
     }
@@ -89,28 +113,28 @@ export const searchDrugShortages = async (
     
     // Call our Edge Function
     const { data, error } = await supabase.functions.invoke('drug-shortage-api', {
-      method: 'GET',
+      method: 'POST',
       body: { 
         action: 'search',
         term: drugName 
       }
     });
     
-    if (error) throw error;
+    if (error) throw new ApiError(error.message);
     
     // Check if it's an error response
-    if ((data as ErrorResponse).error) {
-      const errorData = (data as ErrorResponse).error;
-      const errorMessage = typeof errorData === 'string' 
-        ? errorData 
-        : errorData.en;
-      throw new Error(errorMessage);
+    if ((data as EdgeFunctionError).error) {
+      const errorData = data as EdgeFunctionError;
+      throw new ApiError(errorData.error, errorData.missingCredentials);
     }
 
     return (data as ApiResponse<DrugShortageSearchResult>).data;
   } catch (error) {
+    if (error instanceof ApiError) {
+      throw error; // Rethrow our custom error
+    }
     console.error("Drug shortage search error:", error);
-    // Fall back to mock data
+    // Fall back to mock data for unknown errors
     return mockSearchDrugShortages(drugName);
   }
 };
@@ -118,15 +142,24 @@ export const searchDrugShortages = async (
 // Get details for a single shortage report
 export const getDrugShortageReport = async (
   reportId: string,
-  type: 'shortage' | 'discontinuation',
-  apiCredentials: { email: string; password: string }
+  type: 'shortage' | 'discontinuation'
 ): Promise<DrugShortageReport> => {
   try {
     // Check if we can access the Edge Function
-    const canAccess = await canAccessApi();
+    const { available, authenticated } = await canAccessApi();
     
-    if (!canAccess) {
+    if (!available) {
       console.warn("Edge Function not accessible. Using mock data instead.");
+      // Fall back to mock data
+      return mockGetDrugShortageReport(reportId, type);
+    }
+    
+    if (!authenticated) {
+      console.warn("Edge Function doesn't have API credentials. Using mock data instead.");
+      toast.info("Using sample shortage report data (API credentials not found)", {
+        id: "mock-report-notice",
+        duration: 3000
+      });
       // Fall back to mock data
       return mockGetDrugShortageReport(reportId, type);
     }
@@ -135,28 +168,28 @@ export const getDrugShortageReport = async (
     
     // Call our Edge Function
     const { data, error } = await supabase.functions.invoke('drug-shortage-api', {
-      method: 'GET',
+      method: 'POST',
       body: { 
         action: type === 'shortage' ? 'shortage' : 'discontinuance',
         reportId 
       }
     });
     
-    if (error) throw error;
+    if (error) throw new ApiError(error.message);
     
     // Check if it's an error response
-    if ((data as ErrorResponse).error) {
-      const errorData = (data as ErrorResponse).error;
-      const errorMessage = typeof errorData === 'string' 
-        ? errorData 
-        : errorData.en;
-      throw new Error(errorMessage);
+    if ((data as EdgeFunctionError).error) {
+      const errorData = data as EdgeFunctionError;
+      throw new ApiError(errorData.error, errorData.missingCredentials);
     }
 
     return data as DrugShortageReport;
   } catch (error) {
+    if (error instanceof ApiError) {
+      throw error; // Rethrow our custom error
+    }
     console.error("Get drug shortage report error:", error);
-    // Fall back to mock data
+    // Fall back to mock data for unknown errors
     return mockGetDrugShortageReport(reportId, type);
   }
 };

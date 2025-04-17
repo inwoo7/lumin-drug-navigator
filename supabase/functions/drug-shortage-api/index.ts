@@ -12,8 +12,16 @@ let authToken: string | null = null;
 let tokenExpiry: Date | null = null;
 
 // Login to get an auth token
-async function login(email: string, password: string): Promise<string> {
+async function login(): Promise<string> {
   try {
+    // Get API credentials from Supabase secrets
+    const email = Deno.env.get("VITE_DRUG_SHORTAGE_API_EMAIL");
+    const password = Deno.env.get("VITE_DRUG_SHORTAGE_API_PASSWORD");
+    
+    if (!email || !password) {
+      throw new Error("API credentials not configured in Supabase secrets");
+    }
+    
     // Check if we have a valid cached token
     if (authToken && tokenExpiry && new Date() < tokenExpiry) {
       console.log("Using cached auth token (expires:", tokenExpiry.toISOString(), ")");
@@ -56,6 +64,17 @@ async function login(email: string, password: string): Promise<string> {
   }
 }
 
+// Function to verify if credentials exist
+function verifyCredentials() {
+  const email = Deno.env.get("VITE_DRUG_SHORTAGE_API_EMAIL");
+  const password = Deno.env.get("VITE_DRUG_SHORTAGE_API_PASSWORD");
+  
+  if (!email || !password) {
+    return false;
+  }
+  return true;
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -63,42 +82,11 @@ serve(async (req) => {
   }
 
   try {
-    // Get API credentials from Supabase secrets
-    const email = Deno.env.get("VITE_DRUG_SHORTAGE_API_EMAIL");
-    const password = Deno.env.get("VITE_DRUG_SHORTAGE_API_PASSWORD");
+    // Simple health check for the Edge Function
+    const url = new URL(req.url);
     
-    if (!email || !password) {
-      console.error("API credentials not configured in secrets");
-      return new Response(
-        JSON.stringify({ error: "API credentials not configured" }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, "Content-Type": "application/json" } 
-        }
-      );
-    }
-
-    // Parse request body
+    // Parse request body for all non-OPTIONS requests
     let requestParams: any = {};
-    
-    // Handle status check for the Edge Function
-    if (req.method === "GET") {
-      // Check if this is just a health check
-      const url = new URL(req.url);
-      
-      // If no search params and no body content, it's a health check
-      if (url.search === '' && req.headers.get('content-length') === '0') {
-        console.log("Responding to health check");
-        return new Response(
-          JSON.stringify({ status: "ok", message: "Edge Function is operational" }),
-          { 
-            headers: { ...corsHeaders, "Content-Type": "application/json" } 
-          }
-        );
-      }
-    }
-    
-    // Parse the request body for all non-OPTIONS requests
     if (req.method !== "OPTIONS" && req.headers.get('content-length') !== '0') {
       try {
         requestParams = await req.json();
@@ -109,16 +97,32 @@ serve(async (req) => {
       }
     }
     
-    // Simple health check if checkOnly is true
-    if (requestParams.checkOnly) {
-      console.log("Responding to explicit health check");
+    // If no search params and no body content, or checkOnly is true, it's a health check
+    if ((url.search === '' && req.headers.get('content-length') === '0') || requestParams.checkOnly) {
+      const hasCredentials = verifyCredentials();
+      console.log("Health check: credentials exist =", hasCredentials);
       return new Response(
         JSON.stringify({ 
           status: "ok", 
           message: "Edge Function is operational",
-          hasCredentials: !!email && !!password
+          hasCredentials: hasCredentials
         }),
         { 
+          headers: { ...corsHeaders, "Content-Type": "application/json" } 
+        }
+      );
+    }
+    
+    // Check if credentials exist before proceeding
+    if (!verifyCredentials()) {
+      console.error("API credentials not configured in Supabase secrets");
+      return new Response(
+        JSON.stringify({ 
+          error: "API credentials not configured", 
+          missingCredentials: true 
+        }),
+        { 
+          status: 500, 
           headers: { ...corsHeaders, "Content-Type": "application/json" } 
         }
       );
@@ -129,7 +133,7 @@ serve(async (req) => {
       const term = requestParams.term || "";
       console.log(`Searching for drug: "${term}"`);
       
-      const token = await login(email, password);
+      const token = await login();
       
       const apiResponse = await fetch(
         `https://www.drugshortagescanada.ca/api/v1/search?term=${encodeURIComponent(term)}&orderby=updated_date&order=desc`,
@@ -160,7 +164,7 @@ serve(async (req) => {
       const reportId = requestParams.reportId || "";
       console.log(`Getting ${requestParams.action} report: ${reportId}`);
       
-      const token = await login(email, password);
+      const token = await login();
       
       // Determine the endpoint based on the report type
       const endpoint = requestParams.action === 'shortage' ? 'shortages' : 'discontinuances';
