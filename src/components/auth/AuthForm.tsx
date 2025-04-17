@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,12 +8,23 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import AnimatedBackground from "./AnimatedBackground";
 import { supabase } from "@/integrations/supabase/client";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "./AuthProvider";
 
 const AuthForm = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  
+  // If user is already logged in, redirect to dashboard
+  useEffect(() => {
+    if (user) {
+      navigate("/dashboard");
+    }
+  }, [user, navigate]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,23 +32,38 @@ const AuthForm = () => {
 
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
+        // Login flow
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
 
         if (error) throw error;
-        toast.success("Welcome back to Lumin!");
+        
+        if (data.user && data.session) {
+          toast.success("Welcome back to Lumin!");
+          navigate("/dashboard");
+        }
       } else {
-        const { error } = await supabase.auth.signUp({
+        // Signup flow
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
         });
 
         if (error) throw error;
-        toast.success("Account created! Please check your email to confirm your account.");
+        
+        if (data.user) {
+          if (data.session) {
+            toast.success("Account created successfully! Redirecting to dashboard...");
+            navigate("/dashboard");
+          } else {
+            toast.success("Account created! Please check your email to confirm your account.");
+          }
+        }
       }
     } catch (error: any) {
+      console.error("Authentication error:", error);
       toast.error(error.message || "An error occurred during authentication");
     } finally {
       setIsLoading(false);
