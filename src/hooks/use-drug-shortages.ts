@@ -12,8 +12,13 @@ import {
 
 // Check if we have API credentials in the environment
 const hasApiCredentials = () => {
-  return import.meta.env.VITE_DRUG_SHORTAGE_API_EMAIL && 
-         import.meta.env.VITE_DRUG_SHORTAGE_API_PASSWORD;
+  console.log("Checking API credentials:", 
+    !!import.meta.env.VITE_DRUG_SHORTAGE_API_EMAIL, 
+    !!import.meta.env.VITE_DRUG_SHORTAGE_API_PASSWORD
+  );
+  
+  return !!import.meta.env.VITE_DRUG_SHORTAGE_API_EMAIL && 
+         !!import.meta.env.VITE_DRUG_SHORTAGE_API_PASSWORD;
 };
 
 // Get API credentials from environment variables
@@ -32,6 +37,7 @@ export const useDrugShortageSearch = (drugName: string) => {
       
       try {
         if (hasApiCredentials()) {
+          console.log("Using actual API with credentials");
           // Use real API if credentials are available
           return await searchDrugShortages(drugName, getApiCredentials());
         } else {
@@ -67,6 +73,7 @@ export const useDrugShortageReport = (
       
       try {
         if (hasApiCredentials()) {
+          console.log("Using actual API with credentials for report", reportId);
           // Use real API if credentials are available
           return await getDrugShortageReport(reportId, type, getApiCredentials());
         } else {
