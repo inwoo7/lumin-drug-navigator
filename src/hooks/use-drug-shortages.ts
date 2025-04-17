@@ -51,10 +51,13 @@ export const useDrugShortageSearch = (drugName: string) => {
       if (!drugName) return [] as DrugShortageSearchResult[];
       
       try {
+        console.log(`Searching for drug shortages: "${drugName}"`);
         if (hasApiCredentials()) {
           console.log("Using Edge Function with credentials for drug:", drugName);
           // Use our Edge Function to access the API
-          return await searchDrugShortages(drugName, getApiCredentials());
+          const results = await searchDrugShortages(drugName, getApiCredentials());
+          console.log(`Found ${results.length} shortages for "${drugName}"`);
+          return results;
         } else {
           console.warn('Using mock drug shortage data (API credentials not found)');
           toast.info("Using sample drug shortage data", {
@@ -75,6 +78,8 @@ export const useDrugShortageSearch = (drugName: string) => {
       }
     },
     enabled: drugName.length > 0,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: 2,
   });
 
   return {
@@ -95,10 +100,13 @@ export const useDrugShortageReport = (
       if (!reportId) return null;
       
       try {
+        console.log(`Fetching ${type} report: ${reportId}`);
         if (hasApiCredentials()) {
           console.log("Using Edge Function with credentials for report:", reportId);
           // Use our Edge Function to access the API
-          return await getDrugShortageReport(reportId, type, getApiCredentials());
+          const report = await getDrugShortageReport(reportId, type, getApiCredentials());
+          console.log(`Successfully retrieved ${type} report for ID ${reportId}`);
+          return report;
         } else {
           console.warn('Using mock drug shortage report (API credentials not found)');
           toast.info("Using sample shortage report data", {
@@ -119,6 +127,8 @@ export const useDrugShortageReport = (
       }
     },
     enabled: !!reportId,
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    retry: 2,
   });
 
   return {

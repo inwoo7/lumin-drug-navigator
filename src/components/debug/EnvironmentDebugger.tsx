@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, CheckCircle, RefreshCw, Info, Server } from "lucide-react";
+import { AlertCircle, CheckCircle, RefreshCw, Info, Server, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -14,7 +14,7 @@ const EnvironmentDebugger = () => {
     emailValue: "",
     passwordValue: ""
   });
-  const [edgeFunctionStatus, setEdgeFunctionStatus] = useState<'loading' | 'available' | 'unavailable'>('loading');
+  const [edgeFunctionStatus, setEdgeFunctionStatus] = useState<'loading' | 'available' | 'unavailable' | 'authenticated'>('loading');
   
   const checkEnvVars = () => {
     // Check if drug shortage API credentials exist
@@ -40,13 +40,25 @@ const EnvironmentDebugger = () => {
   const checkEdgeFunction = async () => {
     setEdgeFunctionStatus('loading');
     try {
-      // Use HEAD method instead of OPTIONS since it's not supported in the type
-      const { error } = await supabase.functions.invoke('drug-shortage-api', {
-        method: 'GET',
+      const { data, error } = await supabase.functions.invoke('drug-shortage-api', {
+        method: 'POST',
         body: { checkOnly: true }
       });
       
-      setEdgeFunctionStatus(error ? 'unavailable' : 'available');
+      if (error) {
+        console.error("Edge Function check error:", error);
+        setEdgeFunctionStatus('unavailable');
+        return;
+      }
+      
+      console.log("Edge Function check result:", data);
+      
+      // If we have credentials configured, mark as authenticated
+      if (data?.hasCredentials) {
+        setEdgeFunctionStatus('authenticated');
+      } else {
+        setEdgeFunctionStatus('available');
+      }
     } catch (error) {
       console.error("Error checking Edge Function status:", error);
       setEdgeFunctionStatus('unavailable');
@@ -84,6 +96,7 @@ const EnvironmentDebugger = () => {
               onClick={() => {
                 checkEnvVars();
                 checkEdgeFunction();
+                toast.info("Environment refreshed");
               }}
               title="Refresh environment variables"
             >
@@ -120,19 +133,23 @@ const EnvironmentDebugger = () => {
           </div>
           
           <div className="flex items-center space-x-2 mt-2">
-            {edgeFunctionStatus === 'available' ? (
+            {edgeFunctionStatus === 'authenticated' ? (
               <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
+            ) : edgeFunctionStatus === 'available' ? (
+              <Info className="h-4 w-4 text-blue-500 flex-shrink-0" />
             ) : edgeFunctionStatus === 'loading' ? (
               <RefreshCw className="h-4 w-4 text-blue-500 animate-spin flex-shrink-0" />
             ) : (
               <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
             )}
             <span className="flex-1">Edge Function Status: 
-              {edgeFunctionStatus === 'available' 
-                ? " Available" 
-                : edgeFunctionStatus === 'loading' 
-                  ? " Checking..." 
-                  : " Unavailable"}
+              {edgeFunctionStatus === 'authenticated' 
+                ? " Available & Authenticated" 
+                : edgeFunctionStatus === 'available' 
+                  ? " Available (No Credentials)" 
+                  : edgeFunctionStatus === 'loading' 
+                    ? " Checking..." 
+                    : " Unavailable"}
             </span>
           </div>
           
@@ -146,10 +163,22 @@ const EnvironmentDebugger = () => {
                   solving the CORS restrictions.
                 </p>
                 <p className="text-blue-700 text-xs mt-1">
-                  {edgeFunctionStatus === 'available' 
-                    ? "The Edge Function is deployed and ready to use." 
-                    : "The Edge Function is not yet available. It may take a few minutes to deploy."}
+                  {edgeFunctionStatus === 'authenticated' 
+                    ? "The Edge Function is deployed with valid API credentials." 
+                    : edgeFunctionStatus === 'available'
+                      ? "The Edge Function is deployed but API credentials are missing."
+                      : edgeFunctionStatus === 'unavailable'
+                        ? "The Edge Function is not available. Check Supabase settings."
+                        : "Checking Edge Function status..."}
                 </p>
+                <a 
+                  href="https://supabase.com/dashboard/project/oeazqjeopkepqynrqsxj/functions/drug-shortage-api/logs" 
+                  target="_blank"
+                  className="text-blue-600 hover:underline flex items-center mt-1"
+                >
+                  View Edge Function Logs
+                  <ExternalLink className="h-3 w-3 ml-1" />
+                </a>
               </div>
             </div>
           </div>
@@ -161,6 +190,7 @@ const EnvironmentDebugger = () => {
               <li>You need to restart the dev server after adding variables</li>
               <li>If the Edge Function is unavailable, it may be still deploying</li>
               <li>The Edge Function uses your API credentials stored in Supabase secrets</li>
+              <li>Check Edge Function logs for detailed error information</li>
             </ul>
           </div>
         </div>
