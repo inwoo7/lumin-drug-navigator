@@ -2,8 +2,9 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, CheckCircle, RefreshCw, Info } from "lucide-react";
+import { AlertCircle, CheckCircle, RefreshCw, Info, Server } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 const EnvironmentDebugger = () => {
   const [visible, setVisible] = useState(false);
@@ -13,6 +14,7 @@ const EnvironmentDebugger = () => {
     emailValue: "",
     passwordValue: ""
   });
+  const [edgeFunctionStatus, setEdgeFunctionStatus] = useState<'loading' | 'available' | 'unavailable'>('loading');
   
   const checkEnvVars = () => {
     // Check if drug shortage API credentials exist
@@ -35,9 +37,24 @@ const EnvironmentDebugger = () => {
     });
   };
   
-  // Check environment variables on mount
+  const checkEdgeFunction = async () => {
+    setEdgeFunctionStatus('loading');
+    try {
+      const { error } = await supabase.functions.invoke('drug-shortage-api', {
+        method: 'OPTIONS',
+      });
+      
+      setEdgeFunctionStatus(error ? 'unavailable' : 'available');
+    } catch (error) {
+      console.error("Error checking Edge Function status:", error);
+      setEdgeFunctionStatus('unavailable');
+    }
+  };
+  
+  // Check environment variables and Edge Function on mount
   useEffect(() => {
     checkEnvVars();
+    checkEdgeFunction();
   }, []);
   
   if (!visible) {
@@ -62,7 +79,10 @@ const EnvironmentDebugger = () => {
             <Button 
               variant="ghost" 
               size="sm" 
-              onClick={checkEnvVars}
+              onClick={() => {
+                checkEnvVars();
+                checkEdgeFunction();
+              }}
               title="Refresh environment variables"
             >
               <RefreshCw className="h-4 w-4" />
@@ -97,17 +117,36 @@ const EnvironmentDebugger = () => {
             <span className="flex-1">VITE_DRUG_SHORTAGE_API_PASSWORD: {envVars.passwordValue}</span>
           </div>
           
+          <div className="flex items-center space-x-2 mt-2">
+            {edgeFunctionStatus === 'available' ? (
+              <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
+            ) : edgeFunctionStatus === 'loading' ? (
+              <RefreshCw className="h-4 w-4 text-blue-500 animate-spin flex-shrink-0" />
+            ) : (
+              <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
+            )}
+            <span className="flex-1">Edge Function Status: 
+              {edgeFunctionStatus === 'available' 
+                ? " Available" 
+                : edgeFunctionStatus === 'loading' 
+                  ? " Checking..." 
+                  : " Unavailable"}
+            </span>
+          </div>
+          
           <div className="pt-2 bg-blue-50 p-3 rounded-md border border-blue-200 mt-2">
             <div className="flex">
-              <Info className="h-4 w-4 text-blue-500 mr-2 mt-0.5 flex-shrink-0" />
+              <Server className="h-4 w-4 text-blue-500 mr-2 mt-0.5 flex-shrink-0" />
               <div>
-                <p className="font-medium text-blue-800 mb-1">CORS Restrictions in Development:</p>
+                <p className="font-medium text-blue-800 mb-1">Supabase Edge Function:</p>
                 <p className="text-blue-700 text-xs">
-                  The Drug Shortages Canada API cannot be accessed directly from a browser due to CORS restrictions.
-                  In a production environment, this would typically be handled by a backend proxy or edge function.
+                  A Supabase Edge Function has been created to proxy requests to the Drug Shortages Canada API, 
+                  solving the CORS restrictions.
                 </p>
                 <p className="text-blue-700 text-xs mt-1">
-                  For now, the application will use sample data for demonstration purposes.
+                  {edgeFunctionStatus === 'available' 
+                    ? "The Edge Function is deployed and ready to use." 
+                    : "The Edge Function is not yet available. It may take a few minutes to deploy."}
                 </p>
               </div>
             </div>
@@ -118,7 +157,8 @@ const EnvironmentDebugger = () => {
             <ul className="list-disc pl-4 mt-1 space-y-1 text-yellow-700">
               <li>Environment variables <b>must</b> start with "VITE_"</li>
               <li>You need to restart the dev server after adding variables</li>
-              <li>Check that variables are in the .env file at the project root</li>
+              <li>If the Edge Function is unavailable, it may be still deploying</li>
+              <li>The Edge Function uses your API credentials stored in Supabase secrets</li>
             </ul>
           </div>
         </div>

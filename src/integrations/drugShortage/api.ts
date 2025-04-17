@@ -1,5 +1,5 @@
-
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 // Types for Drug Shortage API responses
 export interface DrugShortageSearchResult {
@@ -50,65 +50,20 @@ interface ErrorResponse {
   error: {
     en: string;
     fr: string;
-  };
+  } | string;
 }
 
-// Cache the auth token
-let authToken: string | null = null;
-let tokenExpiry: Date | null = null;
-
-// Direct API access is not possible due to CORS restrictions when running locally
-// In a production environment, we would need to create a proxy server or use edge functions
-// For now, we'll always use mock data and inform the user
-const canAccessApi = () => {
-  // In a real production environment without CORS issues, this would return true
-  // For local development, we'll always return false
-  return false;
-};
-
-// Login to get an auth token
-const login = async (email: string, password: string): Promise<string> => {
+// Check if Edge Function is accessible
+const canAccessApi = async (): Promise<boolean> => {
   try {
-    // Check if we have a valid cached token
-    if (authToken && tokenExpiry && new Date() < tokenExpiry) {
-      return authToken;
-    }
-
-    if (!canAccessApi()) {
-      throw new Error("CORS restriction: Cannot access API directly from browser");
-    }
-
-    const response = await fetch(`https://www.drugshortagescanada.ca/api/v1/login`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        email,
-        password,
-      }).toString(),
+    const { error } = await supabase.functions.invoke('drug-shortage-api', {
+      method: 'OPTIONS'
     });
-
-    if (!response.ok) {
-      throw new Error(`API login failed: ${response.status}`);
-    }
-
-    // Extract the auth token from header
-    const token = response.headers.get("auth-token");
-    const expiryDate = response.headers.get("expiry-date");
-
-    if (!token) {
-      throw new Error("No auth token returned");
-    }
-
-    // Cache the token
-    authToken = token;
-    tokenExpiry = expiryDate ? new Date(expiryDate) : new Date(Date.now() + 3600000); // Default to 1 hour
-
-    return token;
+    
+    return !error;
   } catch (error) {
-    console.error("Drug Shortage API login error:", error);
-    throw error;
+    console.error("Error checking Edge Function accessibility:", error);
+    return false;
   }
 };
 
@@ -118,43 +73,41 @@ export const searchDrugShortages = async (
   apiCredentials: { email: string; password: string }
 ): Promise<DrugShortageSearchResult[]> => {
   try {
-    // Check if we can access the API directly (not possible due to CORS when running locally)
-    if (!canAccessApi()) {
-      console.warn("CORS restrictions prevent direct API access. Using mock data instead.");
-      // Fall back to mock data due to CORS
+    // Check if we can access the Edge Function
+    const canAccess = await canAccessApi();
+    
+    if (!canAccess) {
+      console.warn("Edge Function not accessible. Using mock data instead.");
+      // Fall back to mock data
       return mockSearchDrugShortages(drugName);
     }
     
-    // Get auth token
-    const token = await login(apiCredentials.email, apiCredentials.password);
-
-    // Search for drug shortage reports
-    const response = await fetch(
-      `https://www.drugshortagescanada.ca/api/v1/search?term=${encodeURIComponent(drugName)}&orderby=updated_date&order=desc`,
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "auth-token": token,
-        },
+    console.log("Using Edge Function to search for drug:", drugName);
+    
+    // Call our Edge Function
+    const { data, error } = await supabase.functions.invoke('drug-shortage-api', {
+      method: 'GET',
+      query: { 
+        term: drugName 
+      },
+      headers: { 
+        path: 'search' 
       }
-    );
-
-    if (!response.ok) {
-      throw new Error(`API search failed: ${response.status}`);
-    }
-
-    const data = await response.json();
+    });
+    
+    if (error) throw error;
     
     // Check if it's an error response
     if ((data as ErrorResponse).error) {
-      throw new Error((data as ErrorResponse).error.en);
+      throw new Error(typeof (data as ErrorResponse).error === 'string' 
+        ? (data as ErrorResponse).error as string 
+        : (data as ErrorResponse).error.en);
     }
 
     return (data as ApiResponse<DrugShortageSearchResult>).data;
   } catch (error) {
     console.error("Drug shortage search error:", error);
-    // Always fall back to mock data
+    // Fall back to mock data
     return mockSearchDrugShortages(drugName);
   }
 };
@@ -166,43 +119,41 @@ export const getDrugShortageReport = async (
   apiCredentials: { email: string; password: string }
 ): Promise<DrugShortageReport> => {
   try {
-    // Check if we can access the API directly (not possible due to CORS when running locally)
-    if (!canAccessApi()) {
-      console.warn("CORS restrictions prevent direct API access. Using mock data instead.");
-      // Fall back to mock data due to CORS
+    // Check if we can access the Edge Function
+    const canAccess = await canAccessApi();
+    
+    if (!canAccess) {
+      console.warn("Edge Function not accessible. Using mock data instead.");
+      // Fall back to mock data
       return mockGetDrugShortageReport(reportId, type);
     }
     
-    // Get auth token
-    const token = await login(apiCredentials.email, apiCredentials.password);
-
-    // Determine the endpoint based on the report type
-    const endpoint = type === 'shortage' ? 'shortages' : 'discontinuances';
-
-    // Get report details
-    const response = await fetch(`https://www.drugshortagescanada.ca/api/v1/${endpoint}/${reportId}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "auth-token": token,
+    console.log("Using Edge Function to get report:", reportId);
+    
+    // Call our Edge Function
+    const { data, error } = await supabase.functions.invoke('drug-shortage-api', {
+      method: 'GET',
+      query: { 
+        reportId 
       },
+      headers: { 
+        path: type === 'shortage' ? 'shortage' : 'discontinuance'
+      }
     });
-
-    if (!response.ok) {
-      throw new Error(`API get report failed: ${response.status}`);
-    }
-
-    const data = await response.json();
+    
+    if (error) throw error;
     
     // Check if it's an error response
     if ((data as ErrorResponse).error) {
-      throw new Error((data as ErrorResponse).error.en);
+      throw new Error(typeof (data as ErrorResponse).error === 'string' 
+        ? (data as ErrorResponse).error as string 
+        : (data as ErrorResponse).error.en);
     }
 
     return data as DrugShortageReport;
   } catch (error) {
     console.error("Get drug shortage report error:", error);
-    // Always fall back to mock data
+    // Fall back to mock data
     return mockGetDrugShortageReport(reportId, type);
   }
 };

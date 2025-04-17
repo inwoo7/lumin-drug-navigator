@@ -52,8 +52,8 @@ export const useDrugShortageSearch = (drugName: string) => {
       
       try {
         if (hasApiCredentials()) {
-          console.log("Using actual API with credentials for drug:", drugName);
-          // Use real API if credentials are available
+          console.log("Using API proxy with credentials for drug:", drugName);
+          // Use our API proxy with Edge Function
           return await searchDrugShortages(drugName, getApiCredentials());
         } else {
           console.warn('Using mock drug shortage data (API credentials not found)');
@@ -96,8 +96,8 @@ export const useDrugShortageReport = (
       
       try {
         if (hasApiCredentials()) {
-          console.log("Using actual API with credentials for report:", reportId);
-          // Use real API if credentials are available
+          console.log("Using API proxy with credentials for report:", reportId);
+          // Use our API proxy with Edge Function
           return await getDrugShortageReport(reportId, type, getApiCredentials());
         } else {
           console.warn('Using mock drug shortage report (API credentials not found)');
