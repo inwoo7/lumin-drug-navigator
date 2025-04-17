@@ -5,14 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { createClient } from '@supabase/supabase-js';
 import { Loader2 } from "lucide-react";
 import AnimatedBackground from "./AnimatedBackground";
-
-// Initialize Supabase client - these will be replaced with actual keys
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+import { supabase } from "@/integrations/supabase/client";
 
 const AuthForm = () => {
   const [isLogin, setIsLogin] = useState(true);
