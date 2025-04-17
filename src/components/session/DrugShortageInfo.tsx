@@ -11,9 +11,10 @@ import { Button } from "@/components/ui/button";
 
 type DrugShortageInfoProps = {
   drugName: string;
+  isLoading?: boolean;
 };
 
-const DrugShortageInfo = ({ drugName }: DrugShortageInfoProps) => {
+const DrugShortageInfo = ({ drugName, isLoading: externalLoading }: DrugShortageInfoProps) => {
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
   const [selectedReportType, setSelectedReportType] = useState<'shortage' | 'discontinuation'>('shortage');
   
@@ -40,7 +41,10 @@ const DrugShortageInfo = ({ drugName }: DrugShortageInfoProps) => {
     setSelectedReportType(shortages[0].type);
   }
 
-  if (isSearchLoading) {
+  // Show loading state if either external loading is true or we're loading data
+  const isLoading = externalLoading || isSearchLoading;
+
+  if (isLoading) {
     return (
       <Card className="h-full">
         <CardContent className="h-full flex items-center justify-center p-6">
