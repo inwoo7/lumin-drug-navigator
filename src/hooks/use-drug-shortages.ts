@@ -19,9 +19,7 @@ const hasApiCredentials = () => {
   
   console.log("API credentials check:", {
     emailExists: !!email,
-    passwordExists: !!password,
-    emailValue: email ? `${email.substring(0, 3)}...` : "missing",
-    passwordValue: password ? "exists" : "missing"
+    passwordExists: !!password
   });
   
   return !!email && !!password;
@@ -33,11 +31,11 @@ const getApiCredentials = () => {
   const password = import.meta.env.VITE_DRUG_SHORTAGE_API_PASSWORD;
   
   if (!email || !password) {
-    toast.error("Missing API credentials. Check .env file and restart server.", {
+    toast.error("Missing API credentials. Using mock data instead.", {
       id: "missing-credentials",
       duration: 5000
     });
-    console.error("Missing API credentials. Check that your .env file contains VITE_DRUG_SHORTAGE_API_EMAIL and VITE_DRUG_SHORTAGE_API_PASSWORD.");
+    console.warn("Missing API credentials. Using mock data instead.");
   }
   
   return {
@@ -59,9 +57,9 @@ export const useDrugShortageSearch = (drugName: string) => {
           return await searchDrugShortages(drugName, getApiCredentials());
         } else {
           console.warn('Using mock drug shortage data (API credentials not found)');
-          toast.error("API credentials not found. Using mock data.", {
+          toast.info("Using sample drug shortage data", {
             id: "mock-data-notice",
-            duration: 5000
+            duration: 3000
           });
           // Fall back to mock data
           return await mockSearchDrugShortages(drugName);
@@ -103,9 +101,9 @@ export const useDrugShortageReport = (
           return await getDrugShortageReport(reportId, type, getApiCredentials());
         } else {
           console.warn('Using mock drug shortage report (API credentials not found)');
-          toast.error("API credentials not found. Using mock data.", {
+          toast.info("Using sample shortage report data", {
             id: "mock-report-notice",
-            duration: 5000
+            duration: 3000
           });
           // Fall back to mock data
           return await mockGetDrugShortageReport(reportId, type);

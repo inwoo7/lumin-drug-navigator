@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, CheckCircle, RefreshCw } from "lucide-react";
+import { AlertCircle, CheckCircle, RefreshCw, Info } from "lucide-react";
 import { toast } from "sonner";
 
 const EnvironmentDebugger = () => {
@@ -97,29 +97,29 @@ const EnvironmentDebugger = () => {
             <span className="flex-1">VITE_DRUG_SHORTAGE_API_PASSWORD: {envVars.passwordValue}</span>
           </div>
           
+          <div className="pt-2 bg-blue-50 p-3 rounded-md border border-blue-200 mt-2">
+            <div className="flex">
+              <Info className="h-4 w-4 text-blue-500 mr-2 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="font-medium text-blue-800 mb-1">CORS Restrictions in Development:</p>
+                <p className="text-blue-700 text-xs">
+                  The Drug Shortages Canada API cannot be accessed directly from a browser due to CORS restrictions.
+                  In a production environment, this would typically be handled by a backend proxy or edge function.
+                </p>
+                <p className="text-blue-700 text-xs mt-1">
+                  For now, the application will use sample data for demonstration purposes.
+                </p>
+              </div>
+            </div>
+          </div>
+          
           <div className="pt-2 bg-yellow-50 p-3 rounded-md border border-yellow-200">
             <p className="font-medium text-yellow-800 mb-1">Troubleshooting Tips:</p>
             <ul className="list-disc pl-4 mt-1 space-y-1 text-yellow-700">
               <li>Environment variables <b>must</b> start with "VITE_"</li>
               <li>You need to restart the dev server after adding variables</li>
               <li>Check that variables are in the .env file at the project root</li>
-              <li>Click the "Test API Connection" button below to verify credentials</li>
             </ul>
-            <Button 
-              className="w-full mt-2 bg-yellow-500 hover:bg-yellow-600 text-white"
-              size="sm"
-              onClick={() => {
-                if (envVars.hasApiEmail && envVars.hasApiPassword) {
-                  toast.success("Testing API connection...");
-                  // This will cause the app to try to connect to the API
-                  window.location.reload();
-                } else {
-                  toast.error("API credentials not set. Please add them to your .env file.");
-                }
-              }}
-            >
-              Test API Connection
-            </Button>
           </div>
         </div>
       </CardContent>

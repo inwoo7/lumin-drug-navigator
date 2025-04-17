@@ -41,10 +41,11 @@ const DrugSearch = () => {
   const navigate = useNavigate();
   const searchRef = useRef<HTMLDivElement>(null);
   
+  // Only search if we have at least 3 characters to avoid unnecessary API calls
+  const searchTerm = searchQuery.length > 2 ? searchQuery : "";
+  
   // Use our hook to prefetch drug shortage data when the user types
-  const { shortages, isLoading: isShortageLoading } = useDrugShortageSearch(
-    searchQuery.length > 2 ? searchQuery : "" // Only search if we have at least 3 characters
-  );
+  const { shortages, isLoading: isShortageLoading } = useDrugShortageSearch(searchTerm);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -60,6 +61,7 @@ const DrugSearch = () => {
   }, []);
 
   useEffect(() => {
+    // Don't try to update suggestions if there's no query
     if (searchQuery.trim() === "") {
       setSuggestions([]);
       return;
@@ -70,8 +72,9 @@ const DrugSearch = () => {
       drug.toLowerCase().includes(searchQuery.toLowerCase())
     );
     
-    // If we have shortage data, add those drug names to suggestions if they're not already there
-    if (shortages.length > 0) {
+    // Only update suggestions from shortages when we have results
+    // This prevents unnecessary state updates during rendering
+    if (shortages && shortages.length > 0) {
       const shortageNames = shortages.map(s => s.brand_name);
       
       // Combine and deduplicate
