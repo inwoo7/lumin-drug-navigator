@@ -13,7 +13,14 @@ import AppLayout from "./components/layout/AppLayout";
 import EnvironmentDebugger from "./components/debug/EnvironmentDebugger";
 import { useState, useEffect } from "react";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
@@ -89,7 +96,7 @@ const App = () => {
       <TooltipProvider>
         <AuthProvider>
           <Toaster />
-          <Sonner />
+          <Sonner position="top-right" />
           <BrowserRouter>
             <InnerApp />
           </BrowserRouter>
