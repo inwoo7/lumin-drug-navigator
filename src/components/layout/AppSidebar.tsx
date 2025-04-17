@@ -1,0 +1,174 @@
+
+import { useState } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { toast } from "sonner";
+import { 
+  SearchIcon, 
+  FileIcon, 
+  HistoryIcon, 
+  LogOutIcon, 
+  MenuIcon,
+  PillIcon,
+  SettingsIcon,
+  XIcon
+} from "lucide-react";
+
+const AppSidebar = () => {
+  const { signOut } = useAuth();
+  const location = useLocation();
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      toast.success("Signed out successfully");
+    } catch (error) {
+      toast.error("Failed to sign out");
+    }
+  };
+
+  const toggleSidebar = () => {
+    setIsMobileOpen(!isMobileOpen);
+  };
+
+  const navItems = [
+    {
+      name: "New Search",
+      path: "/dashboard",
+      icon: <SearchIcon className="mr-2 h-4 w-4" />,
+    },
+    {
+      name: "Previous Sessions",
+      path: "/history",
+      icon: <HistoryIcon className="mr-2 h-4 w-4" />,
+    },
+    {
+      name: "Saved Documents",
+      path: "/documents",
+      icon: <FileIcon className="mr-2 h-4 w-4" />,
+    },
+    {
+      name: "Settings",
+      path: "/settings",
+      icon: <SettingsIcon className="mr-2 h-4 w-4" />,
+    },
+  ];
+
+  return (
+    <>
+      {/* Mobile Menu Toggle */}
+      <div className="fixed top-4 left-4 z-50 lg:hidden">
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={toggleSidebar}
+          className="bg-white"
+        >
+          <MenuIcon className="h-5 w-5" />
+        </Button>
+      </div>
+
+      {/* Sidebar for mobile (slide-over) */}
+      <div
+        className={`fixed inset-0 z-40 transform lg:hidden transition-transform duration-300 ease-in-out ${
+          isMobileOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="relative flex h-full w-64 flex-col bg-white shadow-xl">
+          <div className="absolute right-0 top-0 -mr-12 pt-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleSidebar}
+              className="text-white"
+            >
+              <XIcon className="h-6 w-6" />
+            </Button>
+          </div>
+
+          <div className="sidebar-content">
+            {/* Mobile sidebar content - same as desktop */}
+            <div className="flex items-center gap-2 px-4 py-6 border-b">
+              <PillIcon className="h-8 w-8 text-lumin-teal" />
+              <span className="text-xl font-bold text-lumin-teal">Lumin</span>
+            </div>
+
+            <nav className="flex-1 space-y-1 px-2 py-4">
+              {navItems.map((item) => (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  onClick={() => setIsMobileOpen(false)}
+                >
+                  <Button
+                    variant={location.pathname === item.path ? "default" : "ghost"}
+                    className={`w-full justify-start mb-1 ${
+                      location.pathname === item.path
+                        ? "bg-lumin-teal text-white hover:bg-lumin-teal/90"
+                        : ""
+                    }`}
+                  >
+                    {item.icon}
+                    {item.name}
+                  </Button>
+                </Link>
+              ))}
+            </nav>
+            
+            <div className="border-t p-4">
+              <Button
+                variant="ghost"
+                className="w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-50"
+                onClick={handleSignOut}
+              >
+                <LogOutIcon className="mr-2 h-4 w-4" />
+                Sign Out
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop sidebar (always visible) */}
+      <div className="hidden lg:flex h-screen w-64 flex-col bg-white border-r">
+        <div className="flex items-center gap-2 px-4 py-6 border-b">
+          <PillIcon className="h-8 w-8 text-lumin-teal" />
+          <span className="text-xl font-bold text-lumin-teal">Lumin</span>
+        </div>
+
+        <nav className="flex-1 space-y-1 px-2 py-4">
+          {navItems.map((item) => (
+            <Link key={item.path} to={item.path}>
+              <Button
+                variant={location.pathname === item.path ? "default" : "ghost"}
+                className={`w-full justify-start mb-1 ${
+                  location.pathname === item.path
+                    ? "bg-lumin-teal text-white hover:bg-lumin-teal/90"
+                    : ""
+                }`}
+              >
+                {item.icon}
+                {item.name}
+              </Button>
+            </Link>
+          ))}
+        </nav>
+        
+        <div className="border-t p-4">
+          <Button
+            variant="ghost"
+            className="w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-50"
+            onClick={handleSignOut}
+          >
+            <LogOutIcon className="mr-2 h-4 w-4" />
+            Sign Out
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default AppSidebar;
