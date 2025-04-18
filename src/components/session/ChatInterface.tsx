@@ -38,7 +38,7 @@ const ChatInterface = ({
   );
   
   // Get all drug shortage data for comprehensive analysis
-  const { results: allShortages, isLoading: isAllShortagesLoading } = useDrugShortageSearch(
+  const { shortages: allShortages, isLoading: isAllShortagesLoading } = useDrugShortageSearch(
     drugName,
     sessionId
   );

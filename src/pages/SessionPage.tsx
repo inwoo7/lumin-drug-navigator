@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -98,10 +97,9 @@ const SessionPage = () => {
       if (!sessionId) return;
       
       try {
+        // Using RPC instead of direct table access
         const { data, error } = await supabase
-          .from('session_documents')
-          .select('content')
-          .eq('session_id', sessionId)
+          .rpc('get_session_document', { p_session_id: sessionId })
           .single();
           
         if (error) {
@@ -111,7 +109,7 @@ const SessionPage = () => {
           return;
         }
         
-        if (data) {
+        if (data && data.content) {
           setDocumentContent(data.content);
         }
       } catch (err) {
@@ -138,43 +136,15 @@ const SessionPage = () => {
 
   const saveDocument = async (content: string) => {
     try {
-      // Check if we already have a document for this session
-      const { data, error } = await supabase
-        .from('session_documents')
-        .select('id')
-        .eq('session_id', sessionId)
-        .single();
+      // Using RPC instead of direct table access
+      const { error } = await supabase
+        .rpc('save_session_document', {
+          p_session_id: sessionId,
+          p_content: content
+        });
         
-      if (error && error.code !== 'PGRST116') {
-        throw error;
-      }
+      if (error) throw error;
       
-      if (data) {
-        // Update existing document
-        await supabase
-          .from('session_documents')
-          .update({
-            content: content,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', data.id);
-      } else {
-        // Create new document
-        await supabase
-          .from('session_documents')
-          .insert({
-            session_id: sessionId,
-            content: content,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
-        
-        // Update session to indicate it has a document
-        await supabase
-          .from('search_sessions')
-          .update({ has_document: true })
-          .eq('id', sessionId);
-      }
     } catch (err) {
       console.error("Error saving document:", err);
     }

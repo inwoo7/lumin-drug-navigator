@@ -233,7 +233,19 @@ serve(async (req) => {
     }
     
     const messagesData = await messagesResponse.json();
+    
+    // Check if we have messages
+    if (!messagesData.data || messagesData.data.length === 0) {
+      throw new Error("No messages returned from OpenAI");
+    }
+    
     const lastMessage = messagesData.data[0];
+    
+    // Check if last message has content
+    if (!lastMessage.content || lastMessage.content.length === 0 || !lastMessage.content[0].text) {
+      throw new Error("No content in last message");
+    }
+    
     const allMessages = messagesData.data.map(msg => ({
       id: msg.id,
       role: msg.role,
@@ -254,83 +266,20 @@ serve(async (req) => {
           
           // Store the interaction in ai_interactions table
           await supabase
-            .from('ai_interactions')
-            .insert({
-              session_id: sessionId,
-              assistant_type: assistantType,
-              prompt: messages.length > 0 ? messages[messages.length - 1].content : "Initial prompt",
-              response: lastMessage.content[0].text.value,
-              created_at: new Date().toISOString()
+            .rpc('save_ai_conversation', {
+              p_session_id: sessionId,
+              p_assistant_type: assistantType,
+              p_thread_id: thread.id,
+              p_messages: allMessages
             });
-          
-          // Update or create the conversation record
-          const existingConversation = await supabase
-            .from('ai_conversations')
-            .select('id')
-            .eq('session_id', sessionId)
-            .eq('assistant_type', assistantType)
-            .single();
-            
-          if (existingConversation.data) {
-            // Update existing conversation
-            await supabase
-              .from('ai_conversations')
-              .update({
-                thread_id: thread.id,
-                messages: allMessages,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', existingConversation.data.id);
-          } else {
-            // Create new conversation
-            await supabase
-              .from('ai_conversations')
-              .insert({
-                session_id: sessionId,
-                assistant_type: assistantType,
-                thread_id: thread.id,
-                messages: allMessages,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-              });
-          }
           
           // If this is the document assistant, update the document content
           if (assistantType === "document") {
-            const existingDocument = await supabase
-              .from('session_documents')
-              .select('id')
-              .eq('session_id', sessionId)
-              .single();
-              
-            const documentContent = lastMessage.content[0].text.value;
-            
-            if (existingDocument.data) {
-              // Update existing document
-              await supabase
-                .from('session_documents')
-                .update({
-                  content: documentContent,
-                  updated_at: new Date().toISOString()
-                })
-                .eq('id', existingDocument.data.id);
-            } else {
-              // Create new document
-              await supabase
-                .from('session_documents')
-                .insert({
-                  session_id: sessionId,
-                  content: documentContent,
-                  created_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString()
-                });
-            }
-            
-            // Update the session to indicate it has a document
             await supabase
-              .from('search_sessions')
-              .update({ has_document: true })
-              .eq('id', sessionId);
+              .rpc('save_session_document', {
+                p_session_id: sessionId,
+                p_content: lastMessage.content[0].text.value
+              });
           }
           
           console.log(`Logged AI interaction for session ${sessionId}`);

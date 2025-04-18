@@ -9,6 +9,44 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      ai_conversations: {
+        Row: {
+          assistant_type: string
+          created_at: string
+          id: string
+          messages: Json
+          session_id: string | null
+          thread_id: string
+          updated_at: string
+        }
+        Insert: {
+          assistant_type: string
+          created_at?: string
+          id?: string
+          messages?: Json
+          session_id?: string | null
+          thread_id: string
+          updated_at?: string
+        }
+        Update: {
+          assistant_type?: string
+          created_at?: string
+          id?: string
+          messages?: Json
+          session_id?: string | null
+          thread_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_conversations_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "search_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       drug_shortage_reports: {
         Row: {
           created_at: string
@@ -77,6 +115,38 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      session_documents: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          session_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          session_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          session_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_documents_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "search_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

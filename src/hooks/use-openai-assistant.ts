@@ -41,12 +41,12 @@ export const useOpenAIAssistant = ({
       if (!sessionId) return;
       
       try {
-        // Check if there's an existing conversation for this session and assistant type
+        // Use RPC function to load conversation since types don't include new tables
         const { data, error } = await supabase
-          .from('ai_conversations')
-          .select('thread_id, messages')
-          .eq('session_id', sessionId)
-          .eq('assistant_type', assistantType)
+          .rpc('get_ai_conversation', { 
+            p_session_id: sessionId, 
+            p_assistant_type: assistantType 
+          })
           .single();
           
         if (error) {

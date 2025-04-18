@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,10 +37,9 @@ const DocumentEditor = ({
       
       try {
         // Check if we have a document in the database
+        // Use raw query since types don't include our new tables yet
         const { data, error } = await supabase
-          .from('session_documents')
-          .select('content')
-          .eq('session_id', sessionId)
+          .rpc('get_session_document', { p_session_id: sessionId })
           .single();
           
         if (error) {
@@ -54,7 +52,7 @@ const DocumentEditor = ({
           } else {
             initializeWithTemplate();
           }
-        } else if (data) {
+        } else if (data && data.content) {
           setContent(data.content);
         } else if (initialContent) {
           setContent(initialContent);
@@ -130,47 +128,14 @@ const DocumentEditor = ({
     setIsSaving(true);
     
     try {
-      // Check if we already have a document for this session
-      const { data, error } = await supabase
-        .from('session_documents')
-        .select('id')
-        .eq('session_id', sessionId)
-        .single();
+      // Use a custom RPC function to handle saving document
+      const { error } = await supabase
+        .rpc('save_session_document', { 
+          p_session_id: sessionId,
+          p_content: content
+        });
         
-      if (error && error.code !== 'PGRST116') {
-        throw error;
-      }
-      
-      if (data) {
-        // Update existing document
-        const { error: updateError } = await supabase
-          .from('session_documents')
-          .update({
-            content: content,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', data.id);
-          
-        if (updateError) throw updateError;
-      } else {
-        // Create new document
-        const { error: insertError } = await supabase
-          .from('session_documents')
-          .insert({
-            session_id: sessionId,
-            content: content,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
-          
-        if (insertError) throw insertError;
-        
-        // Update the session to indicate it has a document
-        await supabase
-          .from('search_sessions')
-          .update({ has_document: true })
-          .eq('id', sessionId);
-      }
+      if (error) throw error;
       
       toast.success("Document saved successfully", {
         icon: <Check className="h-4 w-4" />,
