@@ -47,13 +47,16 @@ const SessionPage = () => {
     sessionId,
     drugShortageData: selectedReportData,
     documentContent,
-    autoInitialize: !!selectedReportData && !isDocumentGenerated && !docLoadAttempted,
-    generateDocument: true,
+    // Only auto-initialize if we have report data AND no document is generated yet AND we haven't tried loading
+    autoInitialize: !!selectedReportData && !isDocumentGenerated && !docLoadAttempted && documentContent === "",
+    generateDocument: !!selectedReportData && !isDocumentGenerated && documentContent === "",
     onDocumentUpdate: (content) => {
-      setDocumentContent(content);
-      setIsDocumentGenerated(true);
-      setIsDocumentInitializing(false);
-      saveDocument(content);
+      if (!documentContent || documentContent === "") { // Only update if there's no document already
+        setDocumentContent(content);
+        setIsDocumentGenerated(true);
+        setIsDocumentInitializing(false);
+        saveDocument(content);
+      }
     }
   });
   
@@ -150,12 +153,20 @@ const SessionPage = () => {
     initializeSession();
   }, [sessionId, location.state, navigate, session, isSessionLoading]);
 
-  // Load document from database when session is loaded
+  // Load document from database when session is loaded - this should happen FIRST
   useEffect(() => {
     const loadDocument = async () => {
-      if (!sessionId || docLoadAttempted) return;
+      // Exit early if:
+      // 1. We don't have a sessionId
+      // 2. We've already tried loading (prevents double loads)
+      // 3. We already have document content
+      // 4. We've already generated a document
+      if (!sessionId || docLoadAttempted || documentContent !== "" || isDocumentGenerated) return;
       
       try {
+        console.log("Attempting to load document from database...");
+        setDocLoadAttempted(true); // Mark as attempted immediately to prevent double loads
+        
         const { data: docs, error } = await supabase
           .rpc('get_session_document', { 
             p_session_id: sessionId 
@@ -163,7 +174,6 @@ const SessionPage = () => {
           
         if (error) {
           console.error("Error loading document:", error);
-          setDocLoadAttempted(true);
           return;
         }
         
@@ -172,7 +182,6 @@ const SessionPage = () => {
           setDocumentContent(docs[0].content);
           setIsDocumentGenerated(true);
           setIsDocumentInitializing(false);
-          setDocLoadAttempted(true);
           
           // Also mark in the session that it has a document
           if (sessionId) {
@@ -182,16 +191,15 @@ const SessionPage = () => {
               .eq('id', sessionId);
           }
         } else {
-          setDocLoadAttempted(true);
+          console.log("No document found in database");
         }
       } catch (err) {
         console.error("Error loading document:", err);
-        setDocLoadAttempted(true);
       }
     };
     
     loadDocument();
-  }, [sessionId, docLoadAttempted]);
+  }, [sessionId, docLoadAttempted, documentContent, isDocumentGenerated]);
 
   const handleUpdateDocument = (content: string) => {
     setDocumentContent(content);

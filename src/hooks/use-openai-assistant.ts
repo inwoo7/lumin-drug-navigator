@@ -41,7 +41,10 @@ export const useOpenAIAssistant = ({
   const [threadId, setThreadId] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const [hasAttemptedGeneration, setHasAttemptedGeneration] = useState<boolean>(false);
+  const [isRestoredSession, setIsRestoredSession] = useState<boolean>(false);
+  const [shouldSendRawData, setShouldSendRawData] = useState<boolean>(rawApiData);
 
+  // Load existing conversation from database
   useEffect(() => {
     const loadConversation = async () => {
       if (!sessionId) return;
@@ -76,6 +79,8 @@ export const useOpenAIAssistant = ({
             // Skip auto-initialization if we loaded messages from DB
             if (storedMessages.length > 0) {
               setHasAttemptedGeneration(true);
+              setIsRestoredSession(true);
+              setShouldSendRawData(false); // Don't send raw data for restored sessions
             }
           }
         }
@@ -90,19 +95,33 @@ export const useOpenAIAssistant = ({
   // This effect triggers document generation when drug data is available
   useEffect(() => {
     const generateDocumentFromData = async () => {
+      // Don't generate if:
+      // 1. We're not dealing with a document assistant
+      // 2. We don't want to generate a document
+      // 3. We don't have drug data
+      // 4. We've already attempted generation
+      // 5. We don't have a session ID
+      // 6. We're already loading something
+      // 7. We're in a restored session (i.e., session loaded from DB)
+      // 8. We already have document content
       if (
-        assistantType === "document" && 
-        generateDocument && 
-        drugShortageData && 
-        !hasAttemptedGeneration && 
-        sessionId &&
-        !isLoading
+        assistantType !== "document" || 
+        !generateDocument || 
+        !drugShortageData || 
+        hasAttemptedGeneration || 
+        !sessionId ||
+        isLoading ||
+        isRestoredSession ||
+        (documentContent && documentContent.length > 0)
       ) {
-        setHasAttemptedGeneration(true);
-        setIsLoading(true);
-        
-        try {
-          const generationPrompt = `Generate a comprehensive drug shortage management plan for ${drugShortageData.brand_name || drugShortageData.drug_name}. 
+        return;
+      }
+      
+      setHasAttemptedGeneration(true);
+      setIsLoading(true);
+      
+      try {
+        const generationPrompt = `Generate a comprehensive drug shortage management plan for ${drugShortageData.brand_name || drugShortageData.drug_name}. 
 Include the following sections:
 1. Executive Summary - Overview of the shortage situation
 2. Product Details - Information about the affected medication
@@ -117,75 +136,76 @@ Use the complete drug shortage data to create a professional, detailed, and acti
 Include evidence-based recommendations where possible.
 Format the document in Markdown with clear headings and sections.`;
 
-          const { data, error } = await supabase.functions.invoke("openai-assistant", {
-            body: {
-              assistantType: "document",
-              messages: [{
-                role: "user",
-                content: generationPrompt
-              }],
-              drugData: drugShortageData,
-              allShortageData: allShortageData || [],
-              sessionId,
-              generateDocument: true,
-              rawData: true // Flag to indicate we need raw API data
-            },
-          });
-          
-          if (error) {
-            console.error("Error generating document:", error);
-            toast.error("Error generating document. Please try again later.");
-            setIsLoading(false);
-            return;
-          }
-          
-          if (data.error) {
-            console.error("Error from document generation:", data.error);
-            toast.error("Error generating document: " + data.error);
-            setIsLoading(false);
-            return;
-          }
-          
-          // Set thread ID for future messages
-          if (data.threadId) {
-            setThreadId(data.threadId);
-          }
-          
-          // Update document via callback
-          if (onDocumentUpdate && data.message) {
-            onDocumentUpdate(data.message);
-          }
-          
-          // Add the system message to chat history
-          addMessage("assistant", "I've generated a document based on the drug shortage data. You can now ask me to make changes or explain any part of it.");
-          
-          // Save this conversation to the database
-          if (sessionId && data.threadId) {
-            try {
-              await supabase.rpc('save_ai_conversation', {
-                p_session_id: sessionId,
-                p_assistant_type: assistantType,
-                p_thread_id: data.threadId,
-                p_messages: JSON.stringify([{
-                  id: Date.now().toString(),
-                  role: "assistant",
-                  content: "I've generated a document based on the drug shortage data. You can now ask me to make changes or explain any part of it.",
-                  timestamp: new Date().toISOString()
-                }])
-              });
-            } catch (saveErr) {
-              console.error("Error saving conversation:", saveErr);
-            }
-          }
-          
-          setIsInitialized(true);
-        } catch (err: any) {
-          console.error("Error generating document:", err);
-          setError(err.message || "An error occurred");
+        const { data, error } = await supabase.functions.invoke("openai-assistant", {
+          body: {
+            assistantType: "document",
+            messages: [{
+              role: "user",
+              content: generationPrompt
+            }],
+            drugData: drugShortageData,
+            allShortageData: allShortageData || [],
+            sessionId,
+            generateDocument: true,
+            rawData: shouldSendRawData // Only send raw data for new document generations
+          },
+        });
+        
+        if (error) {
+          console.error("Error generating document:", error);
           toast.error("Error generating document. Please try again later.");
-        } finally {
           setIsLoading(false);
+          return;
         }
+        
+        if (data.error) {
+          console.error("Error from document generation:", data.error);
+          toast.error("Error generating document: " + data.error);
+          setIsLoading(false);
+          return;
+        }
+        
+        // Set thread ID for future messages
+        if (data.threadId) {
+          setThreadId(data.threadId);
+        }
+        
+        // Update document via callback
+        if (onDocumentUpdate && data.message) {
+          onDocumentUpdate(data.message);
+        }
+        
+        // Add the system message to chat history
+        addMessage("assistant", "I've generated a document based on the drug shortage data. You can now ask me to make changes or explain any part of it.");
+        
+        // Save this conversation to the database
+        if (sessionId && data.threadId) {
+          try {
+            await supabase.rpc('save_ai_conversation', {
+              p_session_id: sessionId,
+              p_assistant_type: assistantType,
+              p_thread_id: data.threadId,
+              p_messages: JSON.stringify([{
+                id: Date.now().toString(),
+                role: "assistant",
+                content: "I've generated a document based on the drug shortage data. You can now ask me to make changes or explain any part of it.",
+                timestamp: new Date().toISOString()
+              }])
+            });
+          } catch (saveErr) {
+            console.error("Error saving conversation:", saveErr);
+          }
+        }
+        
+        // After first generation, we don't need to send raw data anymore
+        setShouldSendRawData(false);
+        setIsInitialized(true);
+      } catch (err: any) {
+        console.error("Error generating document:", err);
+        setError(err.message || "An error occurred");
+        toast.error("Error generating document. Please try again later.");
+      } finally {
+        setIsLoading(false);
       }
     };
     
@@ -198,7 +218,10 @@ Format the document in Markdown with clear headings and sections.`;
     sessionId, 
     isLoading,
     onDocumentUpdate,
-    allShortageData
+    allShortageData,
+    isRestoredSession,
+    documentContent,
+    shouldSendRawData
   ]);
 
   // This effect handles loading drug data for the information assistant
@@ -209,7 +232,8 @@ Format the document in Markdown with clear headings and sections.`;
         !hasAttemptedGeneration && 
         drugShortageData && 
         !isInitialized && 
-        !isLoading
+        !isLoading &&
+        !isRestoredSession // Don't initialize if we're in a restored session
       ) {
         setHasAttemptedGeneration(true);
         setIsLoading(true);
@@ -228,7 +252,7 @@ Format the document in Markdown with clear headings and sections.`;
               allShortageData: allShortageData || [],
               sessionId,
               createThreadOnly: true, // Only create thread, don't generate a message
-              rawData: true
+              rawData: shouldSendRawData // Only send raw data for initial thread creation
             },
           });
           
@@ -239,6 +263,8 @@ Format the document in Markdown with clear headings and sections.`;
             setThreadId(data.threadId);
           }
           
+          // After initialization, we don't need to send raw data anymore
+          setShouldSendRawData(false);
         } catch (err: any) {
           console.error("Error initializing info assistant:", err);
           toast.error("Error connecting to assistant service. Using offline mode.");
@@ -259,7 +285,9 @@ Format the document in Markdown with clear headings and sections.`;
     isLoading,
     hasAttemptedGeneration,
     allShortageData,
-    sessionId
+    sessionId,
+    isRestoredSession,
+    shouldSendRawData
   ]);
 
   useEffect(() => {
@@ -281,6 +309,13 @@ Format the document in Markdown with clear headings and sections.`;
         return;
       }
       
+      // Skip if we're in a restored session with document content
+      if (isRestoredSession && documentContent && documentContent.length > 0) {
+        setIsInitialized(true);
+        setHasAttemptedGeneration(true);
+        return;
+      }
+      
       if (autoInitialize && sessionId && !threadId) {
         setIsLoading(true);
         
@@ -294,7 +329,7 @@ Format the document in Markdown with clear headings and sections.`;
               documentContent,
               sessionId,
               generateDocument: generateDocument || assistantType === "document",
-              rawData: true // Always send raw API data
+              rawData: shouldSendRawData // Only send raw data for initial document generation
             },
           });
           
@@ -349,6 +384,8 @@ Format the document in Markdown with clear headings and sections.`;
             }
           }
           
+          // After initialization, we don't need to send raw data anymore
+          setShouldSendRawData(false);
           setIsInitialized(true);
           setHasAttemptedGeneration(true);
         } catch (err: any) {
@@ -375,8 +412,9 @@ Format the document in Markdown with clear headings and sections.`;
     documentContent,
     onDocumentUpdate,
     generateDocument,
-    rawApiData,
-    hasAttemptedGeneration
+    isRestoredSession,
+    hasAttemptedGeneration,
+    shouldSendRawData
   ]);
 
   const addMessage = (role: "user" | "assistant", content: string) => {
@@ -412,7 +450,7 @@ Format the document in Markdown with clear headings and sections.`;
           documentContent,
           sessionId,
           threadId,
-          rawData: true, // Always send raw API data
+          rawData: false, // Never send raw data for regular messages
           isDocumentEdit: content.includes("Please edit the document with the following instructions:")
         },
       }).catch(err => {
