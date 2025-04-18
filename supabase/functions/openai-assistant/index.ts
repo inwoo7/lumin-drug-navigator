@@ -11,6 +11,10 @@ const corsHeaders = {
 // Get OpenAI API key from the environment
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
+// Assistant IDs for different purposes
+const SHORTAGE_ASSISTANT_ID = "asst_p9adU6tFNefnEmlqMDmuAbeg";
+const DOCUMENT_ASSISTANT_ID = "asst_YD3cbgbhibchd3NltzVtP2VO";
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -43,88 +47,125 @@ serve(async (req) => {
 
     console.log(`Received request for ${assistantType} assistant`);
     
-    // Construct different system prompts based on the assistant type
-    let systemPrompt = '';
+    // Select the appropriate assistant ID
+    const assistantId = assistantType === "shortage" 
+      ? SHORTAGE_ASSISTANT_ID 
+      : DOCUMENT_ASSISTANT_ID;
     
-    if (assistantType === "shortage") {
-      systemPrompt = `You are an AI assistant specialized in drug shortage information for hospital pharmacists.
-Your role is to provide detailed information about drug shortages to help pharmacists respond effectively.
-
-Here is the most recent data about this drug shortage:
-${JSON.stringify(drugData, null, 2)}
-
-Based on this data, provide comprehensive information including:
-1. A summary of the current shortage situation
-2. Therapeutic alternatives that could be considered
-3. Conservation strategies for the limited supply
-4. Patient prioritization recommendations
-5. Potential off-label uses that might be affected
-6. Other healthcare practitioners to consult
-
-Be precise, clinical, and practical in your responses. Cite specific details from the shortage data when relevant.
-If you don't know something, acknowledge that and suggest where the pharmacist might find that information.`;
-    } else if (assistantType === "document") {
-      systemPrompt = `You are an AI assistant specialized in creating documentation for drug shortage communications.
-Your role is to draft concise, professional documentation that hospital pharmacists can send to staff.
-
-Here is the most recent data about this drug shortage:
-${JSON.stringify(drugData, null, 2)}
-
-Create professional documentation that includes:
-1. A clear header with the drug name and date
-2. Brief description of the shortage situation
-3. Expected resolution date
-4. Recommended therapeutic alternatives
-5. Practical conservation strategies
-6. Clear next steps and contacts
-
-Format the documentation in a professional manner suitable for distribution to healthcare staff.
-If asked to revise any part of the document, make targeted changes while maintaining the professional tone and format.`;
-    } else {
-      console.error(`Invalid assistant type: ${assistantType}`);
-      return new Response(
-        JSON.stringify({ error: "Invalid assistant type" }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, "Content-Type": "application/json" } 
-        }
-      );
-    }
-    
-    // Prepare the messages array for OpenAI
-    const messageArray = [
-      {
-        role: "system",
-        content: systemPrompt
-      },
-      ...messages
-    ];
-    
-    console.log(`Sending ${messageArray.length} messages to OpenAI`);
-    
-    // Call the OpenAI API
-    const openAIResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    // Create a new thread
+    const threadResponse = await fetch("https://api.openai.com/v1/threads", {
       method: "POST",
       headers: {
+        "Authorization": `Bearer ${openAIApiKey}`,
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${openAIApiKey}`
+        "OpenAI-Beta": "assistants=v1"
+      }
+    });
+    
+    if (!threadResponse.ok) {
+      throw new Error(`Failed to create thread: ${await threadResponse.text()}`);
+    }
+    
+    const thread = await threadResponse.json();
+    console.log("Created thread:", thread.id);
+    
+    // Add the user's messages to the thread
+    for (const msg of messages) {
+      if (msg.role === "user") {
+        await fetch(`https://api.openai.com/v1/threads/${thread.id}/messages`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${openAIApiKey}`,
+            "Content-Type": "application/json",
+            "OpenAI-Beta": "assistants=v1"
+          },
+          body: JSON.stringify({
+            role: "user",
+            content: msg.content
+          })
+        });
+      }
+    }
+    
+    // Run the assistant
+    const runResponse = await fetch(`https://api.openai.com/v1/threads/${thread.id}/runs`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openAIApiKey}`,
+        "Content-Type": "application/json",
+        "OpenAI-Beta": "assistants=v1"
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini", // Using the specified model, can be upgraded to gpt-4o if needed
-        messages: messageArray,
-        temperature: 0.7,
-        max_tokens: 1500, // Adjust based on the expected response length
+        assistant_id: assistantId,
+        instructions: assistantType === "shortage" 
+          ? `You are analyzing this drug shortage data: ${JSON.stringify(drugData)}. 
+             Provide detailed insights about the shortage situation, therapeutic alternatives, 
+             conservation strategies, and other relevant information.`
+          : `You are helping create a concise document about this drug shortage: 
+             ${JSON.stringify(drugData)}. Focus on key information that hospital staff 
+             need to know.`
       })
     });
     
-    if (!openAIResponse.ok) {
-      const errorData = await openAIResponse.text();
-      console.error("OpenAI API error:", errorData);
-      throw new Error(`OpenAI API error: ${openAIResponse.status} ${errorData}`);
+    if (!runResponse.ok) {
+      throw new Error(`Failed to run assistant: ${await runResponse.text()}`);
     }
     
-    const result = await openAIResponse.json();
-    console.log("Successfully received response from OpenAI");
+    const run = await runResponse.json();
+    console.log("Started run:", run.id);
+    
+    // Poll for completion
+    let runStatus = run.status;
+    let attempts = 0;
+    const maxAttempts = 30; // Maximum number of polling attempts
+    
+    while (runStatus !== "completed" && attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second between polls
+      
+      const statusResponse = await fetch(
+        `https://api.openai.com/v1/threads/${thread.id}/runs/${run.id}`,
+        {
+          headers: {
+            "Authorization": `Bearer ${openAIApiKey}`,
+            "OpenAI-Beta": "assistants=v1"
+          }
+        }
+      );
+      
+      if (!statusResponse.ok) {
+        throw new Error(`Failed to check run status: ${await statusResponse.text()}`);
+      }
+      
+      const statusData = await statusResponse.json();
+      runStatus = statusData.status;
+      attempts++;
+      
+      if (runStatus === "failed") {
+        throw new Error("Assistant run failed");
+      }
+    }
+    
+    if (runStatus !== "completed") {
+      throw new Error("Assistant run timed out");
+    }
+    
+    // Get the latest message from the thread
+    const messagesResponse = await fetch(
+      `https://api.openai.com/v1/threads/${thread.id}/messages`,
+      {
+        headers: {
+          "Authorization": `Bearer ${openAIApiKey}`,
+          "OpenAI-Beta": "assistants=v1"
+        }
+      }
+    );
+    
+    if (!messagesResponse.ok) {
+      throw new Error(`Failed to get messages: ${await messagesResponse.text()}`);
+    }
+    
+    const messagesData = await messagesResponse.json();
+    const lastMessage = messagesData.data[0];
     
     // If we have a session ID, log this interaction in the database
     if (sessionId) {
@@ -142,8 +183,8 @@ If asked to revise any part of the document, make targeted changes while maintai
             .insert({
               session_id: sessionId,
               assistant_type: assistantType,
-              prompt: messageArray[messageArray.length - 1].content,
-              response: result.choices[0].message.content,
+              prompt: messages[messages.length - 1].content,
+              response: lastMessage.content[0].text.value,
               created_at: new Date().toISOString()
             });
           
@@ -158,8 +199,8 @@ If asked to revise any part of the document, make targeted changes while maintai
     // Return the response
     return new Response(
       JSON.stringify({
-        message: result.choices[0].message.content,
-        usage: result.usage
+        message: lastMessage.content[0].text.value,
+        threadId: thread.id
       }),
       { 
         headers: { ...corsHeaders, "Content-Type": "application/json" } 
