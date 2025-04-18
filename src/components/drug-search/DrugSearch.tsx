@@ -38,16 +38,15 @@ const DrugSearch = () => {
 
   return (
     <div className="relative w-full">
-      <CommandInput
-        placeholder="Search for a drug..."
-        value={searchTerm}
-        onValueChange={setSearchTerm}
-        className="w-full"
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 200)}
-      />
-      {open && (
-        <div className="absolute z-50 w-full min-w-[300px] bg-white border rounded-md shadow-lg">
+      <Command className="rounded-lg border shadow-md">
+        <CommandInput
+          placeholder="Search for a drug..."
+          value={searchTerm}
+          onValueChange={setSearchTerm}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 200)}
+        />
+        {open && (
           <CommandList className="max-h-[300px] overflow-y-auto">
             <CommandEmpty>No drugs found.</CommandEmpty>
             <CommandGroup>
@@ -62,8 +61,8 @@ const DrugSearch = () => {
               ))}
             </CommandGroup>
           </CommandList>
-        </div>
-      )}
+        )}
+      </Command>
     </div>
   );
 };
