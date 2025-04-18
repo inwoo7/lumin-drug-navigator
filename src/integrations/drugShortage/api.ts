@@ -92,17 +92,31 @@ class ApiError extends Error {
   }
 }
 
+// Helper function to format dates consistently
+const formatDate = (dateString: string | undefined): string | undefined => {
+  if (!dateString) return undefined;
+  return dateString.split('T')[0];
+};
+
+// Helper function to prettify status text
+const prettifyText = (text: string): string => {
+  return text
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+};
+
 // Transform API search results to our application format
 const transformSearchResult = (apiResult: any): DrugShortageSearchResult => ({
   id: apiResult.id,
   report_id: apiResult.id,
   brand_name: apiResult.en_drug_brand_name,
-  company_name: apiResult.company?.name || 'Unknown Company',
+  company_name: (apiResult.company && typeof apiResult.company === 'object') ? apiResult.company.name : 'Unknown Company',
   active_ingredients: apiResult.en_ingredients,
   strength: apiResult.strength || '',
   dosage_form: apiResult.drug_dosage_form || '',
-  status: apiResult.status || 'Unknown',
-  updated_date: apiResult.last_updated_date || new Date().toISOString().split('T')[0],
+  status: prettifyText(apiResult.status || 'Unknown'),
+  updated_date: formatDate(apiResult.last_updated_date) || formatDate(new Date().toISOString()),
   type: apiResult.discontinuation_date ? 'discontinuation' : 'shortage'
 });
 
@@ -112,19 +126,19 @@ const transformReport = (apiReport: any): DrugShortageReport => ({
   report_id: apiReport.id,
   brand_name: apiReport.en_drug_brand_name,
   active_ingredients: apiReport.en_ingredients,
-  company_name: apiReport.company?.name || 'Unknown Company',
-  strength: apiReport.strength || '',
+  company_name: (apiReport.company && typeof apiReport.company === 'object') ? apiReport.company.name : 'Unknown Company',
+  strength: apiResult.strength || '',
   dosage_form: apiReport.drug_dosage_form || '',
-  discontinuation_date: apiReport.discontinuation_date,
-  anticipated_start_date: apiReport.anticipated_start_date,
-  actual_start_date: apiReport.actual_start_date,
-  estimated_end_date: apiReport.estimated_end_date,
-  actual_end_date: apiReport.actual_end_date,
-  status: apiReport.status || 'Unknown',
+  discontinuation_date: formatDate(apiReport.discontinuation_date),
+  anticipated_start_date: formatDate(apiReport.anticipated_start_date),
+  actual_start_date: formatDate(apiReport.actual_start_date),
+  estimated_end_date: formatDate(apiReport.estimated_end_date),
+  actual_end_date: formatDate(apiReport.actual_end_date),
+  status: prettifyText(apiReport.status || 'Unknown'),
   reason_for_shortage: apiReport.shortage_reason?.en_reason || 'Not specified',
   comments: apiReport.en_comments || '',
   tier_3: apiReport.tier_3 || false,
-  updated_date: apiReport.last_updated_date || new Date().toISOString().split('T')[0],
+  updated_date: formatDate(apiReport.last_updated_date) || formatDate(new Date().toISOString()),
   type: apiReport.discontinuation_date ? 'discontinuation' : 'shortage'
 });
 

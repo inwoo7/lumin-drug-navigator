@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,14 +17,12 @@ const DrugShortageInfo = ({ drugName, isLoading: externalLoading }: DrugShortage
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
   const [selectedReportType, setSelectedReportType] = useState<'shortage' | 'discontinuation'>('shortage');
   
-  // Fetch the list of shortages for this drug
   const { 
     shortages, 
     isLoading: isSearchLoading, 
     isError: isSearchError 
   } = useDrugShortageSearch(drugName);
   
-  // If a report is selected, fetch its details
   const { 
     report, 
     isLoading: isReportLoading, 
@@ -35,13 +32,11 @@ const DrugShortageInfo = ({ drugName, isLoading: externalLoading }: DrugShortage
     selectedReportType
   );
   
-  // Select the first report by default when results come in
   if (shortages.length > 0 && !selectedReport && !isSearchLoading) {
     setSelectedReport(shortages[0].id);
     setSelectedReportType(shortages[0].type);
   }
 
-  // Show loading state if either external loading is true or we're loading data
   const isLoading = externalLoading || isSearchLoading;
 
   if (isLoading) {
@@ -103,7 +98,6 @@ const DrugShortageInfo = ({ drugName, isLoading: externalLoading }: DrugShortage
     );
   }
 
-  // If we have multiple reports, show a selector
   const ReportSelector = () => (
     shortages.length > 1 ? (
       <div className="mb-4">
@@ -154,7 +148,6 @@ const DrugShortageInfo = ({ drugName, isLoading: externalLoading }: DrugShortage
     );
   }
 
-  // Map the impact to a color
   const getImpactColor = (status: string) => {
     const statusLower = status.toLowerCase();
     if (statusLower.includes('discontinued') || statusLower.includes('active')) {
@@ -311,7 +304,7 @@ const DrugShortageInfo = ({ drugName, isLoading: externalLoading }: DrugShortage
             <div>
               <h4 className="text-sm font-medium">Official Source</h4>
               <a 
-                href="https://www.drugshortagescanada.ca/" 
+                href={`https://www.drugshortagescanada.ca/shortage/${report.report_id}`}
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="text-sm text-blue-600 hover:underline flex items-center mt-1"
