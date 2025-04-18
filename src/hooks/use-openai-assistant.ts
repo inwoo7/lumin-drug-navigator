@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -23,15 +22,18 @@ type UseOpenAIAssistantProps = {
 };
 
 // Define the types for our custom RPC function responses
-export interface AIConversationResponse {
+type AIConversationResponse = {
   thread_id: string;
-  messages: Array<{
+  messages: {
     id: string;
     role: "user" | "assistant";
     content: string;
     timestamp: string;
-  }>;
+  }[];
 }
+
+// Add proper RPC types
+type GetAIConversationArgs = { p_session_id: string; p_assistant_type: string };
 
 export const useOpenAIAssistant = ({
   assistantType,
@@ -54,14 +56,11 @@ export const useOpenAIAssistant = ({
       if (!sessionId) return;
       
       try {
-        // Use RPC function to load conversation since types don't include new tables
-        const { data, error } = await supabase.rpc<AIConversationResponse, { p_session_id: string; p_assistant_type: string }>(
-          'get_ai_conversation', 
-          { 
-            p_session_id: sessionId, 
-            p_assistant_type: assistantType 
-          }
-        );
+        // Use RPC function to load conversation
+        const { data, error } = await supabase.rpc('get_ai_conversation', { 
+          p_session_id: sessionId, 
+          p_assistant_type: assistantType 
+        });
           
         if (error) {
           if (error.code !== 'PGRST116') { // PGRST116 is the "not found" error

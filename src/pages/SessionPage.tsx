@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,7 +12,16 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { useSession, createSession } from "@/hooks/use-drug-shortages";
 import { supabase } from "@/integrations/supabase/client";
-import { SessionDocumentResponse } from "@/components/session/DocumentEditor";
+
+// Define the type for our custom RPC function response
+type SessionDocumentResponse = {
+  id: string;
+  content: string;
+}
+
+// Add proper RPC types
+type GetSessionDocumentArgs = { p_session_id: string };
+type SaveSessionDocumentArgs = { p_session_id: string; p_content: string };
 
 const SessionPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -100,10 +108,9 @@ const SessionPage = () => {
       
       try {
         // Using RPC instead of direct table access
-        const { data, error } = await supabase.rpc<SessionDocumentResponse, { p_session_id: string }>(
-          'get_session_document', 
-          { p_session_id: sessionId }
-        );
+        const { data, error } = await supabase.rpc('get_session_document', { 
+          p_session_id: sessionId 
+        });
           
         if (error) {
           if (error.code !== 'PGRST116') { // PGRST116 is the "not found" error
@@ -140,13 +147,10 @@ const SessionPage = () => {
   const saveDocument = async (content: string) => {
     try {
       // Using RPC instead of direct table access
-      const { error } = await supabase.rpc<null, { p_session_id: string; p_content: string }>(
-        'save_session_document', 
-        {
-          p_session_id: sessionId,
-          p_content: content
-        }
-      );
+      const { error } = await supabase.rpc('save_session_document', {
+        p_session_id: sessionId,
+        p_content: content
+      });
         
       if (error) throw error;
       
