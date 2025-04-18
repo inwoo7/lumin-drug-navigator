@@ -52,13 +52,13 @@ serve(async (req) => {
       ? SHORTAGE_ASSISTANT_ID 
       : DOCUMENT_ASSISTANT_ID;
     
-    // Create a new thread
+    // Create a new thread - Updated for v2 API
     const threadResponse = await fetch("https://api.openai.com/v1/threads", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${openAIApiKey}`,
         "Content-Type": "application/json",
-        "OpenAI-Beta": "assistants=v1"
+        "OpenAI-Beta": "assistants=v2" // Updated header for v2 API
       }
     });
     
@@ -69,7 +69,7 @@ serve(async (req) => {
     const thread = await threadResponse.json();
     console.log("Created thread:", thread.id);
     
-    // Add the user's messages to the thread
+    // Add the user's messages to the thread - Updated for v2 API
     for (const msg of messages) {
       if (msg.role === "user") {
         await fetch(`https://api.openai.com/v1/threads/${thread.id}/messages`, {
@@ -77,7 +77,7 @@ serve(async (req) => {
           headers: {
             "Authorization": `Bearer ${openAIApiKey}`,
             "Content-Type": "application/json",
-            "OpenAI-Beta": "assistants=v1"
+            "OpenAI-Beta": "assistants=v2" // Updated header for v2 API
           },
           body: JSON.stringify({
             role: "user",
@@ -87,13 +87,13 @@ serve(async (req) => {
       }
     }
     
-    // Run the assistant
+    // Run the assistant - Updated for v2 API
     const runResponse = await fetch(`https://api.openai.com/v1/threads/${thread.id}/runs`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${openAIApiKey}`,
         "Content-Type": "application/json",
-        "OpenAI-Beta": "assistants=v1"
+        "OpenAI-Beta": "assistants=v2" // Updated header for v2 API
       },
       body: JSON.stringify({
         assistant_id: assistantId,
@@ -114,7 +114,7 @@ serve(async (req) => {
     const run = await runResponse.json();
     console.log("Started run:", run.id);
     
-    // Poll for completion
+    // Poll for completion - Updated for v2 API
     let runStatus = run.status;
     let attempts = 0;
     const maxAttempts = 30; // Maximum number of polling attempts
@@ -127,7 +127,7 @@ serve(async (req) => {
         {
           headers: {
             "Authorization": `Bearer ${openAIApiKey}`,
-            "OpenAI-Beta": "assistants=v1"
+            "OpenAI-Beta": "assistants=v2" // Updated header for v2 API
           }
         }
       );
@@ -149,13 +149,13 @@ serve(async (req) => {
       throw new Error("Assistant run timed out");
     }
     
-    // Get the latest message from the thread
+    // Get the latest message from the thread - Updated for v2 API
     const messagesResponse = await fetch(
       `https://api.openai.com/v1/threads/${thread.id}/messages`,
       {
         headers: {
           "Authorization": `Bearer ${openAIApiKey}`,
-          "OpenAI-Beta": "assistants=v1"
+          "OpenAI-Beta": "assistants=v2" // Updated header for v2 API
         }
       }
     );
@@ -170,13 +170,13 @@ serve(async (req) => {
     // If we have a session ID, log this interaction in the database
     if (sessionId) {
       try {
-        const { supabaseClient } = await import('https://esm.sh/@supabase/supabase-js@2.38.4');
+        const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.38.4");
         
         const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
         const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
         
         if (supabaseUrl && supabaseServiceKey) {
-          const supabase = supabaseClient(supabaseUrl, supabaseServiceKey);
+          const supabase = createClient(supabaseUrl, supabaseServiceKey);
           
           await supabase
             .from('ai_interactions')
