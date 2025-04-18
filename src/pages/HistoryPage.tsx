@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -52,7 +51,6 @@ const HistoryPage = () => {
     try {
       console.log("Fetching sessions for user:", user.id);
       
-      // First try to get sessions with the user_id filter
       const { data, error } = await supabase
         .from('search_sessions')
         .select('id, drug_name, created_at, has_document')
@@ -67,7 +65,6 @@ const HistoryPage = () => {
       } else {
         console.log("No sessions found with user_id filter, trying without filter");
         
-        // If no sessions found with user_id filter, fetch all sessions (for testing/development)
         const { data: allData, error: allError } = await supabase
           .from('search_sessions')
           .select('id, drug_name, created_at, has_document')
@@ -95,7 +92,6 @@ const HistoryPage = () => {
       session.drug_name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Format date to a more readable format
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString("en-CA", {
@@ -119,47 +115,39 @@ const HistoryPage = () => {
     try {
       console.log("Attempting to delete session with ID:", sessionToDelete);
       
-      // Check if session exists before deleting
-      const { data: checkData, error: checkError } = await supabase
+      const { data: sessionData, error: sessionError } = await supabase
         .from('search_sessions')
-        .select('id')
+        .select('*')
         .eq('id', sessionToDelete)
         .single();
-        
-      if (checkError) {
-        console.error("Error checking if session exists:", checkError);
-        if (checkError.code === 'PGRST116') {
-          console.log("Session not found in database, might be already deleted");
-        } else {
-          throw checkError;
-        }
-      } else {
-        console.log("Session found in database, proceeding with deletion");
-      }
       
-      // Attempt to delete the session
+      if (sessionError) {
+        console.error("Error finding session before deletion:", sessionError);
+        toast.error(`Cannot find session: ${sessionError.message}`);
+        return;
+      }
+
+      console.log("Session found before deletion:", sessionData);
+      
       const { data, error } = await supabase
         .from('search_sessions')
         .delete()
         .eq('id', sessionToDelete);
 
       if (error) {
-        console.error("Database error during deletion:", error);
-        throw error;
+        console.error("Database deletion error:", error);
+        toast.error(`Failed to delete session: ${error.message}`);
+        return;
       }
 
-      console.log("Delete operation response:", data);
+      console.log("Delete operation successful. Rows affected:", data);
       
-      // Refresh the sessions list after deletion
       await fetchSessions();
-      
-      // Also update the local state as a fallback
-      setSessions(sessions.filter(session => session.id !== sessionToDelete));
       
       toast.success("Session deleted successfully");
     } catch (error) {
-      console.error("Error deleting session:", error);
-      toast.error("Failed to delete session");
+      console.error("Unexpected error during session deletion:", error);
+      toast.error("An unexpected error occurred while deleting the session");
     } finally {
       setSessionToDelete(null);
     }
