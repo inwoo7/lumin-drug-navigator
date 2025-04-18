@@ -9,6 +9,12 @@ import { supabase } from "@/integrations/supabase/client";
 const EnvironmentDebugger = () => {
   const [visible, setVisible] = useState(false);
   const [edgeFunctionStatus, setEdgeFunctionStatus] = useState<'loading' | 'available' | 'authenticated' | 'unavailable'>('loading');
+  const [apiTestInProgress, setApiTestInProgress] = useState(false);
+  const [apiTestResult, setApiTestResult] = useState<null | {
+    success: boolean;
+    message: string;
+    details?: any;
+  }>(null);
   
   const checkEdgeFunction = async () => {
     setEdgeFunctionStatus('loading');
@@ -24,7 +30,7 @@ const EnvironmentDebugger = () => {
         return;
       }
       
-      console.log("Edge Function check result:", data);
+      console.log("API credentials check:", data);
       
       // If we have credentials configured, mark as authenticated
       if (data?.hasCredentials) {
@@ -35,6 +41,66 @@ const EnvironmentDebugger = () => {
     } catch (error) {
       console.error("Error checking Edge Function status:", error);
       setEdgeFunctionStatus('unavailable');
+    }
+  };
+  
+  const testDrugShortageAPI = async () => {
+    setApiTestInProgress(true);
+    setApiTestResult(null);
+    
+    try {
+      // Use a simple test search term
+      const testTerm = "test";
+      
+      const { data, error } = await supabase.functions.invoke('drug-shortage-api', {
+        method: 'POST',
+        body: { 
+          action: 'search',
+          term: testTerm
+        }
+      });
+      
+      if (error) {
+        console.error("API test error:", error);
+        setApiTestResult({
+          success: false,
+          message: "Edge Function error: " + error.message
+        });
+        return;
+      }
+      
+      if (data.error) {
+        console.error("API response error:", data.error);
+        setApiTestResult({
+          success: false,
+          message: data.error,
+          details: data
+        });
+        return;
+      }
+      
+      // Check if we got a valid response
+      if (Array.isArray(data.data)) {
+        setApiTestResult({
+          success: true,
+          message: `Successfully connected to API and received ${data.data.length} results`,
+          details: data
+        });
+      } else {
+        setApiTestResult({
+          success: false,
+          message: "Received unexpected response format from API",
+          details: data
+        });
+      }
+    } catch (error) {
+      console.error("Error testing API:", error);
+      setApiTestResult({
+        success: false,
+        message: "Error testing API: " + (error as Error).message
+      });
+    } finally {
+      setApiTestInProgress(false);
     }
   };
   
@@ -67,6 +133,7 @@ const EnvironmentDebugger = () => {
               size="sm" 
               onClick={() => {
                 checkEdgeFunction();
+                setApiTestResult(null);
                 toast.info("Environment refreshed");
               }}
               title="Refresh environment status"
@@ -107,6 +174,45 @@ const EnvironmentDebugger = () => {
                     : " Unavailable"}
             </span>
           </div>
+          
+          <div className="pt-2 flex justify-center">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={apiTestInProgress || edgeFunctionStatus === 'loading'}
+              onClick={testDrugShortageAPI}
+              className="w-full"
+            >
+              {apiTestInProgress ? (
+                <>
+                  <RefreshCw className="h-3 w-3 mr-2 animate-spin" />
+                  Testing Connection...
+                </>
+              ) : (
+                "Test API Connection"
+              )}
+            </Button>
+          </div>
+          
+          {apiTestResult && (
+            <div className={`pt-2 p-3 rounded-md border mt-2 ${
+              apiTestResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+            }`}>
+              <p className={`font-medium ${
+                apiTestResult.success ? 'text-green-800' : 'text-red-800'
+              } mb-1`}>
+                {apiTestResult.success ? 'API Connection Successful' : 'API Connection Failed'}
+              </p>
+              <p className={apiTestResult.success ? 'text-green-700' : 'text-red-700'}>
+                {apiTestResult.message}
+              </p>
+              {apiTestResult.details && (
+                <pre className="mt-1 text-xs overflow-auto max-h-20 p-1 bg-gray-50 rounded">
+                  {JSON.stringify(apiTestResult.details, null, 2)}
+                </pre>
+              )}
+            </div>
+          )}
           
           <div className="pt-2 bg-blue-50 p-3 rounded-md border border-blue-200 mt-2">
             <div className="flex">

@@ -32,19 +32,27 @@ export const useDrugShortageSearch = (drugName: string) => {
             duration: 5000
           });
         } else {
-          toast.error("Error fetching drug shortage data. Using mock data.", {
+          toast.error(`Error fetching drug shortage data: ${err.message || 'Unknown error'}. Using mock data.`, {
             id: "api-error",
             duration: 5000
           });
         }
         
+        // Log that we're falling back to mock data
+        console.log(`Falling back to mock data for "${drugName}"`);
+        
         // Fall back to mock data on error
-        return await mockSearchDrugShortages(drugName);
+        const mockData = await mockSearchDrugShortages(drugName);
+        
+        // Log the mock data we're using
+        console.log(`Using mock data with ${mockData.length} results`);
+        
+        return mockData;
       }
     },
     enabled: drugName.length > 0,
     staleTime: 5 * 60 * 1000, // 5 minutes
-    retry: 2,
+    retry: 1, // Only retry once to avoid excessive API calls on failure
   });
 
   return {
@@ -80,11 +88,14 @@ export const useDrugShortageReport = (
             duration: 5000
           });
         } else {
-          toast.error("Error fetching drug shortage report. Using mock data.", {
+          toast.error(`Error fetching drug shortage report: ${err.message || 'Unknown error'}. Using mock data.`, {
             id: "report-api-error",
             duration: 5000
           });
         }
+        
+        // Log that we're falling back to mock data
+        console.log(`Using mock data for report ${reportId}`);
         
         // Fall back to mock data on error
         return await mockGetDrugShortageReport(reportId, type);
@@ -92,7 +103,7 @@ export const useDrugShortageReport = (
     },
     enabled: !!reportId,
     staleTime: 10 * 60 * 1000, // 10 minutes
-    retry: 2,
+    retry: 1, // Only retry once to avoid excessive API calls on failure
   });
 
   return {
