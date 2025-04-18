@@ -12,6 +12,7 @@ import { Link } from "react-router-dom";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { useSession, createSession } from "@/hooks/use-drug-shortages";
+import { supabase } from "@/integrations/supabase/client";
 
 const SessionPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -22,6 +23,7 @@ const SessionPage = () => {
   const [documentContent, setDocumentContent] = useState("");
   const [selectedReportId, setSelectedReportId] = useState<string | undefined>();
   const [selectedReportType, setSelectedReportType] = useState<'shortage' | 'discontinuation'>('shortage');
+  const [activeTab, setActiveTab] = useState("info");
   
   // Use our hook to load session data
   const { session, isLoading: isSessionLoading, isError: isSessionError } = useSession(sessionId);
@@ -90,26 +92,113 @@ const SessionPage = () => {
     initializeSession();
   }, [sessionId, location.state, navigate, session, isSessionLoading]);
 
+  // Load document content from Supabase if it exists
+  useEffect(() => {
+    const loadDocument = async () => {
+      if (!sessionId) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('session_documents')
+          .select('content')
+          .eq('session_id', sessionId)
+          .single();
+          
+        if (error) {
+          if (error.code !== 'PGRST116') { // PGRST116 is the "not found" error
+            console.error("Error loading document:", error);
+          }
+          return;
+        }
+        
+        if (data) {
+          setDocumentContent(data.content);
+        }
+      } catch (err) {
+        console.error("Error loading document:", err);
+      }
+    };
+    
+    loadDocument();
+  }, [sessionId]);
+
   const handleUpdateDocument = (content: string) => {
     setDocumentContent(content);
-    // In a real app, we would save this to Supabase
   };
   
   const handleSendToDocument = (content: string) => {
-    // In a real app, we would update the document with the content
-    setDocumentContent((prev) => prev + "\n\n" + content);
-    toast.success("Added content to document");
+    setDocumentContent(content);
+    toast.success("Updated document content");
+    
+    // Save document to Supabase
+    if (sessionId) {
+      saveDocument(content);
+    }
+  };
+
+  const saveDocument = async (content: string) => {
+    try {
+      // Check if we already have a document for this session
+      const { data, error } = await supabase
+        .from('session_documents')
+        .select('id')
+        .eq('session_id', sessionId)
+        .single();
+        
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+      
+      if (data) {
+        // Update existing document
+        await supabase
+          .from('session_documents')
+          .update({
+            content: content,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', data.id);
+      } else {
+        // Create new document
+        await supabase
+          .from('session_documents')
+          .insert({
+            session_id: sessionId,
+            content: content,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+        
+        // Update session to indicate it has a document
+        await supabase
+          .from('search_sessions')
+          .update({ has_document: true })
+          .eq('id', sessionId);
+      }
+    } catch (err) {
+      console.error("Error saving document:", err);
+    }
   };
 
   const handleSaveSession = async () => {
-    // In a real app, we would save all session data to Supabase
-    toast.success("Session saved successfully");
+    // Save document if we have one
+    if (documentContent && sessionId) {
+      await saveDocument(documentContent);
+      toast.success("Session saved successfully");
+    } else {
+      toast.success("Session state saved");
+    }
   };
 
   // Handle report selection from DrugShortageInfo
   const handleReportSelect = (reportId: string, reportType: 'shortage' | 'discontinuation') => {
     setSelectedReportId(reportId);
     setSelectedReportType(reportType);
+  };
+
+  // Handle tab change
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
   };
 
   if (isLoading || isSessionLoading) {
@@ -147,7 +236,7 @@ const SessionPage = () => {
       
       <Separator />
       
-      <Tabs defaultValue="info" className="w-full">
+      <Tabs defaultValue={activeTab} value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList>
           <TabsTrigger value="info" className="flex items-center">
             <MessageSquare className="h-4 w-4 mr-2" />
@@ -192,7 +281,9 @@ const SessionPage = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <DocumentEditor 
               drugName={drugName} 
+              sessionId={sessionId}
               onContentChange={handleUpdateDocument} 
+              initialContent={documentContent}
             />
             <ChatInterface 
               drugName={drugName} 
@@ -200,6 +291,7 @@ const SessionPage = () => {
               sessionId={sessionId}
               reportId={selectedReportId}
               reportType={selectedReportType}
+              documentContent={documentContent}
               onSendToDocument={handleSendToDocument} 
             />
           </div>

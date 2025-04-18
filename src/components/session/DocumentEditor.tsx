@@ -4,20 +4,76 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { Download, FileText, AlertTriangle, Check } from "lucide-react";
+import { Download, FileText, AlertTriangle, Check, Save } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 interface DocumentEditorProps {
   drugName: string;
+  sessionId?: string;
   onContentChange: (content: string) => void;
+  initialContent?: string;
 }
 
-const DocumentEditor = ({ drugName, onContentChange }: DocumentEditorProps) => {
+const DocumentEditor = ({ 
+  drugName, 
+  sessionId,
+  onContentChange,
+  initialContent
+}: DocumentEditorProps) => {
   const [content, setContent] = useState("");
   const [previewContent, setPreviewContent] = useState("");
   const [activeTab, setActiveTab] = useState("edit");
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
 
+  // Load document content from database or use initial content
   useEffect(() => {
+    const loadDocument = async () => {
+      if (!sessionId) {
+        // Use template for new sessions
+        initializeWithTemplate();
+        return;
+      }
+      
+      try {
+        // Check if we have a document in the database
+        const { data, error } = await supabase
+          .from('session_documents')
+          .select('content')
+          .eq('session_id', sessionId)
+          .single();
+          
+        if (error) {
+          if (error.code !== 'PGRST116') { // PGRST116 is the "not found" error
+            console.error("Error loading document:", error);
+          }
+          // Use initial content or template if no document found
+          if (initialContent) {
+            setContent(initialContent);
+          } else {
+            initializeWithTemplate();
+          }
+        } else if (data) {
+          setContent(data.content);
+        } else if (initialContent) {
+          setContent(initialContent);
+        } else {
+          initializeWithTemplate();
+        }
+        
+        setIsLoaded(true);
+      } catch (err) {
+        console.error("Error loading document:", err);
+        // Fallback to template
+        initializeWithTemplate();
+      }
+    };
+    
+    loadDocument();
+  }, [sessionId, initialContent]);
+
+  const initializeWithTemplate = () => {
     // Initialize with a template
     const template = `# ${drugName} Shortage Management Plan
 
@@ -43,9 +99,12 @@ const DocumentEditor = ({ drugName, onContentChange }: DocumentEditorProps) => {
 [List important resources and contact information]
 `;
     setContent(template);
-  }, [drugName]);
+    setIsLoaded(true);
+  };
 
   useEffect(() => {
+    if (!isLoaded) return;
+    
     // Simple markdown-to-html conversion for preview
     // In a real app, you would use a proper markdown library
     const htmlContent = content
@@ -56,10 +115,72 @@ const DocumentEditor = ({ drugName, onContentChange }: DocumentEditorProps) => {
       .replace(/\[(.+?)\]/g, '<span class="text-gray-500 italic">$1</span>');
     setPreviewContent(htmlContent);
     onContentChange(content);
-  }, [content, onContentChange]);
+  }, [content, onContentChange, isLoaded]);
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value);
+  };
+
+  const handleSaveDocument = async () => {
+    if (!sessionId) {
+      toast.error("Cannot save document without a session ID");
+      return;
+    }
+    
+    setIsSaving(true);
+    
+    try {
+      // Check if we already have a document for this session
+      const { data, error } = await supabase
+        .from('session_documents')
+        .select('id')
+        .eq('session_id', sessionId)
+        .single();
+        
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+      
+      if (data) {
+        // Update existing document
+        const { error: updateError } = await supabase
+          .from('session_documents')
+          .update({
+            content: content,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', data.id);
+          
+        if (updateError) throw updateError;
+      } else {
+        // Create new document
+        const { error: insertError } = await supabase
+          .from('session_documents')
+          .insert({
+            session_id: sessionId,
+            content: content,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+          
+        if (insertError) throw insertError;
+        
+        // Update the session to indicate it has a document
+        await supabase
+          .from('search_sessions')
+          .update({ has_document: true })
+          .eq('id', sessionId);
+      }
+      
+      toast.success("Document saved successfully", {
+        icon: <Check className="h-4 w-4" />,
+      });
+    } catch (err) {
+      console.error("Error saving document:", err);
+      toast.error("Failed to save document");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleExportPDF = () => {
@@ -75,14 +196,33 @@ const DocumentEditor = ({ drugName, onContentChange }: DocumentEditorProps) => {
     <Card className="h-full flex flex-col">
       <CardHeader className="px-4 py-3 border-b flex flex-row items-center justify-between">
         <CardTitle className="text-md">Document Editor</CardTitle>
-        <Button
-          size="sm"
-          onClick={handleExportPDF}
-          className="bg-lumin-teal hover:bg-lumin-teal/90"
-        >
-          <Download className="h-4 w-4 mr-2" />
-          Export PDF
-        </Button>
+        <div className="flex gap-2">
+          {sessionId && (
+            <Button
+              size="sm"
+              onClick={handleSaveDocument}
+              disabled={isSaving}
+              variant="outline"
+            >
+              {isSaving ? (
+                <>Saving</>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save
+                </>
+              )}
+            </Button>
+          )}
+          <Button
+            size="sm"
+            onClick={handleExportPDF}
+            className="bg-lumin-teal hover:bg-lumin-teal/90"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Export PDF
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="flex-1 p-0 flex flex-col">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
@@ -105,7 +245,7 @@ const DocumentEditor = ({ drugName, onContentChange }: DocumentEditorProps) => {
                 <AlertTriangle className="h-5 w-5 text-amber-500 mr-2 mt-0.5" />
                 <div>
                   <p className="text-sm text-amber-700">
-                    All changes are automatically saved. Use the AI Assistant for help with content.
+                    Use the AI Assistant to help with content. Press the Save button to store your changes.
                   </p>
                 </div>
               </div>

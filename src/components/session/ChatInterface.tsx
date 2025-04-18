@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { SendIcon, Loader2 } from "lucide-react";
 import { useOpenAIAssistant, Message as AIMessage, AssistantType } from "@/hooks/use-openai-assistant";
-import { useDrugShortageReport } from "@/hooks/use-drug-shortages";
+import { useDrugShortageReport, useDrugShortageSearch } from "@/hooks/use-drug-shortages";
 
 interface ChatInterfaceProps {
   drugName: string;
@@ -14,6 +14,7 @@ interface ChatInterfaceProps {
   sessionId?: string;
   reportId?: string;
   reportType?: 'shortage' | 'discontinuation';
+  documentContent?: string;
   onSendToDocument?: (text: string) => void;
 }
 
@@ -23,6 +24,7 @@ const ChatInterface = ({
   sessionId,
   reportId,
   reportType = 'shortage',
+  documentContent,
   onSendToDocument 
 }: ChatInterfaceProps) => {
   const [inputMessage, setInputMessage] = useState("");
@@ -35,31 +37,41 @@ const ChatInterface = ({
     sessionId
   );
   
+  // Get all drug shortage data for comprehensive analysis
+  const { results: allShortages, isLoading: isAllShortagesLoading } = useDrugShortageSearch(
+    drugName,
+    sessionId
+  );
+  
   // Map session type to assistant type
   const assistantType: AssistantType = sessionType === "info" ? "shortage" : "document";
   
-  // Use our OpenAI assistant hook
+  // Use our OpenAI assistant hook with auto-initialization
   const {
     messages,
     isLoading: isAILoading,
     sendMessage,
-    addMessage
+    addMessage,
+    isInitialized
   } = useOpenAIAssistant({
     assistantType,
     sessionId,
-    drugShortageData: report || { drug_name: drugName }
+    drugShortageData: report || { drug_name: drugName },
+    allShortageData: allShortages?.length > 0 ? allShortages : undefined,
+    documentContent,
+    autoInitialize: true
   });
   
-  // Add initial assistant message when chat first loads
+  // Add initial assistant message when chat first loads if not initialized
   useEffect(() => {
-    if (messages.length === 0 && !isReportLoading && report) {
+    if (messages.length === 0 && !isReportLoading && !isAILoading && !isInitialized) {
       const initialMessage = sessionType === "info"
         ? `Hello! I'm your AI assistant for drug shortage information. I can provide insights about ${drugName} shortages, alternative therapies, and conservation strategies. How can I help you today?`
         : `I'm here to help you create a document about the ${drugName} shortage. You can ask me to suggest content, format text, or provide clinical information. What would you like to include in your document?`;
       
       addMessage("assistant", initialMessage);
     }
-  }, [drugName, sessionType, messages.length, report, isReportLoading]);
+  }, [drugName, sessionType, messages.length, report, isReportLoading, isAILoading, isInitialized, addMessage]);
 
   useEffect(() => {
     // Scroll to bottom when messages change
@@ -83,15 +95,26 @@ const ChatInterface = ({
     
     // If we don't have a report ID, use a simpler prompt
     if (!report && !reportId) {
-      addMessage("user", inputMessage);
-      addMessage("assistant", "I don't have specific shortage data for this drug yet. Try selecting a shortage report first, or ask a general question about drug shortages.");
+      // We'll still send the message since we have the drug name
+      const message = inputMessage;
       setInputMessage("");
+      // If this is a document assistant, try to update document with result
+      const response = await sendMessage(message);
+      
+      if (response && sessionType === "document" && onSendToDocument) {
+        onSendToDocument(response);
+      }
       return;
     }
     
     const message = inputMessage;
     setInputMessage("");
-    await sendMessage(message);
+    // If this is a document assistant, try to update document with result
+    const response = await sendMessage(message);
+    
+    if (response && sessionType === "document" && onSendToDocument) {
+      onSendToDocument(response);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -107,7 +130,7 @@ const ChatInterface = ({
     }
   };
 
-  const isLoading = isAILoading || isReportLoading;
+  const isLoading = isAILoading || isReportLoading || isAllShortagesLoading;
 
   return (
     <Card className="h-full flex flex-col">
@@ -155,7 +178,9 @@ const ChatInterface = ({
                   <p className="text-sm">
                     {isReportLoading 
                       ? "Loading drug shortage data..." 
-                      : "Generating response..."}
+                      : isAllShortagesLoading
+                        ? "Loading all shortage data..."
+                        : "Generating response..."}
                   </p>
                 </div>
               </div>

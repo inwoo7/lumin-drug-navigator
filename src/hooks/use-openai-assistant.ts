@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -16,16 +16,147 @@ type UseOpenAIAssistantProps = {
   assistantType: AssistantType;
   sessionId?: string;
   drugShortageData: any; // The drug shortage report data
+  allShortageData?: any[]; // All drug shortage data for comprehensive analysis
+  documentContent?: string; // Current document content for document assistant
+  autoInitialize?: boolean; // Whether to automatically initialize the assistant
 };
 
 export const useOpenAIAssistant = ({
   assistantType,
   sessionId,
   drugShortageData,
+  allShortageData,
+  documentContent,
+  autoInitialize = false,
 }: UseOpenAIAssistantProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState<boolean>(false);
+
+  // Load existing conversation if available
+  useEffect(() => {
+    const loadConversation = async () => {
+      if (!sessionId) return;
+      
+      try {
+        // Check if there's an existing conversation for this session and assistant type
+        const { data, error } = await supabase
+          .from('ai_conversations')
+          .select('thread_id, messages')
+          .eq('session_id', sessionId)
+          .eq('assistant_type', assistantType)
+          .single();
+          
+        if (error) {
+          if (error.code !== 'PGRST116') { // PGRST116 is the "not found" error
+            console.error("Error loading conversation:", error);
+          }
+          return;
+        }
+        
+        if (data) {
+          setThreadId(data.thread_id);
+          
+          // Convert the stored messages to our format
+          const storedMessages = data.messages.map((msg: any) => ({
+            id: msg.id,
+            role: msg.role,
+            content: msg.content,
+            timestamp: new Date(msg.timestamp)
+          }));
+          
+          setMessages(storedMessages);
+          setIsInitialized(true);
+        }
+      } catch (err) {
+        console.error("Error loading conversation:", err);
+      }
+    };
+    
+    loadConversation();
+  }, [sessionId, assistantType]);
+
+  // Auto-initialize assistant when requested
+  useEffect(() => {
+    const initialize = async () => {
+      if (autoInitialize && !isInitialized && !isLoading && drugShortageData) {
+        // Only initialize if we have a session ID and haven't already done so
+        if (sessionId && messages.length === 0 && !threadId) {
+          setIsLoading(true);
+          
+          try {
+            const { data, error } = await supabase.functions.invoke("openai-assistant", {
+              body: {
+                assistantType,
+                messages: [],
+                drugData: drugShortageData,
+                allShortageData,
+                documentContent,
+                sessionId,
+              },
+            });
+            
+            if (error) {
+              console.error("Error initializing assistant:", error);
+              toast.error("Failed to initialize AI assistant");
+              setError(error.message);
+              return;
+            }
+            
+            if (data.error) {
+              console.error("Error from OpenAI assistant:", data.error);
+              toast.error(data.error);
+              setError(data.error);
+              return;
+            }
+            
+            // Set thread ID and initial message
+            setThreadId(data.threadId);
+            
+            if (data.messages && data.messages.length > 0) {
+              setMessages(data.messages.map((msg: any) => ({
+                id: msg.id,
+                role: msg.role,
+                content: msg.content,
+                timestamp: new Date(msg.timestamp)
+              })));
+            } else {
+              // Fallback if we don't get messages back
+              setMessages([{
+                id: Date.now().toString(),
+                role: "assistant",
+                content: data.message,
+                timestamp: new Date(),
+              }]);
+            }
+            
+            setIsInitialized(true);
+          } catch (err: any) {
+            console.error("Error in initializing assistant:", err);
+            setError(err.message || "An error occurred");
+            toast.error("Failed to initialize AI assistant");
+          } finally {
+            setIsLoading(false);
+          }
+        }
+      }
+    };
+    
+    initialize();
+  }, [
+    autoInitialize, 
+    isInitialized, 
+    messages.length, 
+    sessionId, 
+    assistantType, 
+    threadId, 
+    isLoading, 
+    drugShortageData, 
+    allShortageData, 
+    documentContent
+  ]);
 
   // Function to add a message to the local state
   const addMessage = (role: "user" | "assistant", content: string) => {
@@ -50,13 +181,10 @@ export const useOpenAIAssistant = ({
       addMessage("user", content);
       
       // Prepare the messages in the format expected by OpenAI
-      const messagesForAPI = messages.map((msg) => ({
-        role: msg.role,
-        content: msg.content,
-      }));
-      
-      // Add the new user message
-      messagesForAPI.push({ role: "user", content });
+      const messagesForAPI = [{
+        role: "user",
+        content
+      }];
       
       // Call the Supabase Edge Function
       const { data, error } = await supabase.functions.invoke("openai-assistant", {
@@ -64,7 +192,10 @@ export const useOpenAIAssistant = ({
           assistantType,
           messages: messagesForAPI,
           drugData: drugShortageData,
+          allShortageData,
+          documentContent,
           sessionId,
+          threadId, // Include thread ID for continuing the conversation
         },
       });
       
@@ -82,8 +213,16 @@ export const useOpenAIAssistant = ({
         return;
       }
       
+      // Store threadId for future messages
+      if (data.threadId && !threadId) {
+        setThreadId(data.threadId);
+      }
+      
       // Add the assistant's response to the chat
       addMessage("assistant", data.message);
+      
+      // If this is for document content, return the response for potential document updates
+      return data.message;
       
     } catch (err: any) {
       console.error("Error in sendMessage:", err);
@@ -100,5 +239,7 @@ export const useOpenAIAssistant = ({
     error,
     sendMessage,
     addMessage,
+    isInitialized,
+    threadId,
   };
 };
