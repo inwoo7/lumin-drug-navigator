@@ -21,6 +21,12 @@ type UseOpenAIAssistantProps = {
   autoInitialize?: boolean; // Whether to automatically initialize the assistant
 };
 
+// Define the types for our custom RPC function responses
+type AIConversationResponse = {
+  thread_id: string;
+  messages: any[];
+}
+
 export const useOpenAIAssistant = ({
   assistantType,
   sessionId,
@@ -42,11 +48,13 @@ export const useOpenAIAssistant = ({
       
       try {
         // Use RPC function to load conversation since types don't include new tables
-        const { data, error } = await supabase
-          .rpc('get_ai_conversation', { 
+        const { data, error } = await supabase.rpc<AIConversationResponse[]>(
+          'get_ai_conversation', 
+          { 
             p_session_id: sessionId, 
             p_assistant_type: assistantType 
-          });
+          }
+        );
           
         if (error) {
           if (error.code !== 'PGRST116') { // PGRST116 is the "not found" error

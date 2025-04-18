@@ -14,6 +14,12 @@ import { toast } from "sonner";
 import { useSession, createSession } from "@/hooks/use-drug-shortages";
 import { supabase } from "@/integrations/supabase/client";
 
+// Define the type for our custom RPC function response
+type SessionDocumentResponse = {
+  id: string;
+  content: string;
+}
+
 const SessionPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const location = useLocation();
@@ -99,8 +105,10 @@ const SessionPage = () => {
       
       try {
         // Using RPC instead of direct table access
-        const { data, error } = await supabase
-          .rpc('get_session_document', { p_session_id: sessionId });
+        const { data, error } = await supabase.rpc<SessionDocumentResponse[]>(
+          'get_session_document', 
+          { p_session_id: sessionId }
+        );
           
         if (error) {
           if (error.code !== 'PGRST116') { // PGRST116 is the "not found" error
@@ -137,11 +145,13 @@ const SessionPage = () => {
   const saveDocument = async (content: string) => {
     try {
       // Using RPC instead of direct table access
-      const { error } = await supabase
-        .rpc('save_session_document', {
+      const { error } = await supabase.rpc(
+        'save_session_document', 
+        {
           p_session_id: sessionId,
           p_content: content
-        });
+        }
+      );
         
       if (error) throw error;
       

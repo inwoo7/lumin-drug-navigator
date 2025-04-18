@@ -15,6 +15,12 @@ interface DocumentEditorProps {
   initialContent?: string;
 }
 
+// Define the type for our custom RPC function response
+type SessionDocumentResponse = {
+  id: string;
+  content: string;
+}
+
 const DocumentEditor = ({ 
   drugName, 
   sessionId,
@@ -39,8 +45,10 @@ const DocumentEditor = ({
       try {
         // Check if we have a document in the database
         // Use RPC function since types don't include our new tables yet
-        const { data, error } = await supabase
-          .rpc('get_session_document', { p_session_id: sessionId });
+        const { data, error } = await supabase.rpc<SessionDocumentResponse[]>(
+          'get_session_document', 
+          { p_session_id: sessionId }
+        );
           
         if (error) {
           if (error.code !== 'PGRST116') { // PGRST116 is the "not found" error
@@ -129,11 +137,13 @@ const DocumentEditor = ({
     
     try {
       // Use a custom RPC function to handle saving document
-      const { error } = await supabase
-        .rpc('save_session_document', { 
+      const { error } = await supabase.rpc(
+        'save_session_document', 
+        { 
           p_session_id: sessionId,
           p_content: content
-        });
+        }
+      );
         
       if (error) throw error;
       
