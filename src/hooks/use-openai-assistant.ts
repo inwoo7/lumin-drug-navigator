@@ -23,22 +23,6 @@ type UseOpenAIAssistantProps = {
   generateDocument?: boolean; // Flag to generate document on initialization
 };
 
-// Define the type for conversation in the database
-interface AIConversation {
-  id: string;
-  thread_id: string;
-  assistant_type: string;
-  session_id: string;
-  messages: {
-    id: string;
-    role: string;
-    content: string;
-    timestamp: string;
-  }[];
-  created_at: string;
-  updated_at: string;
-}
-
 export const useOpenAIAssistant = ({
   assistantType,
   sessionId,
@@ -55,7 +39,6 @@ export const useOpenAIAssistant = ({
   const [threadId, setThreadId] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
 
-  // Load existing conversation if available
   useEffect(() => {
     const loadConversation = async () => {
       if (!sessionId) return;
@@ -65,7 +48,7 @@ export const useOpenAIAssistant = ({
           .rpc('get_ai_conversation', { 
             p_session_id: sessionId, 
             p_assistant_type: assistantType 
-          }) as { data: AIConversation[] | null, error: any };
+          });
           
         if (error) {
           console.error("Error loading conversation:", error);
@@ -96,11 +79,9 @@ export const useOpenAIAssistant = ({
     loadConversation();
   }, [sessionId, assistantType]);
 
-  // Auto-initialize assistant when requested
   useEffect(() => {
     const initialize = async () => {
       if (autoInitialize && !isInitialized && !isLoading && drugShortageData) {
-        // Only initialize if we have a session ID and haven't already done so
         if (sessionId && messages.length === 0 && !threadId) {
           setIsLoading(true);
           
@@ -110,10 +91,10 @@ export const useOpenAIAssistant = ({
                 assistantType,
                 messages: [],
                 drugData: drugShortageData,
-                allShortageData: allShortageData || [], // Send all data regardless
+                allShortageData: allShortageData || [],
                 documentContent,
                 sessionId,
-                generateDocument: generateDocument || assistantType === "document", // Flag to generate document
+                generateDocument: generateDocument || assistantType === "document",
               },
             });
             
@@ -131,7 +112,6 @@ export const useOpenAIAssistant = ({
               return;
             }
             
-            // Set thread ID and initial message
             setThreadId(data.threadId);
             
             if (data.messages && data.messages.length > 0) {
@@ -144,7 +124,6 @@ export const useOpenAIAssistant = ({
               
               setMessages(formattedMessages);
               
-              // If this is a document assistant, update document with the first response
               if (assistantType === "document" && onDocumentUpdate && formattedMessages.length > 0) {
                 const assistantMessages = formattedMessages.filter(msg => msg.role === "assistant");
                 if (assistantMessages.length > 0) {
@@ -152,7 +131,6 @@ export const useOpenAIAssistant = ({
                 }
               }
             } else {
-              // Fallback if we don't get messages back
               const initialMessage = {
                 id: Date.now().toString(),
                 role: "assistant" as const,
@@ -162,7 +140,6 @@ export const useOpenAIAssistant = ({
               
               setMessages([initialMessage]);
               
-              // If this is a document assistant, update document
               if (assistantType === "document" && onDocumentUpdate) {
                 onDocumentUpdate(data.message);
               }
@@ -196,7 +173,6 @@ export const useOpenAIAssistant = ({
     generateDocument
   ]);
 
-  // Function to add a message to the local state
   const addMessage = (role: "user" | "assistant", content: string) => {
     const newMessage: Message = {
       id: Date.now().toString(),
@@ -209,31 +185,27 @@ export const useOpenAIAssistant = ({
     return newMessage;
   };
 
-  // Function to send a message to the assistant
   const sendMessage = async (content: string) => {
     try {
       setIsLoading(true);
       setError(null);
       
-      // Add the user message to the chat
       addMessage("user", content);
       
-      // Prepare the messages in the format expected by OpenAI
       const messagesForAPI = [{
         role: "user",
         content
       }];
       
-      // Call the Supabase Edge Function
       const { data, error } = await supabase.functions.invoke("openai-assistant", {
         body: {
           assistantType,
           messages: messagesForAPI,
           drugData: drugShortageData,
-          allShortageData: allShortageData || [], // Send all data regardless
+          allShortageData: allShortageData || [],
           documentContent,
           sessionId,
-          threadId, // Include thread ID for continuing the conversation
+          threadId,
         },
       });
       
@@ -251,20 +223,16 @@ export const useOpenAIAssistant = ({
         return;
       }
       
-      // Store threadId for future messages
       if (data.threadId && !threadId) {
         setThreadId(data.threadId);
       }
       
-      // Add the assistant's response to the chat
       addMessage("assistant", data.message);
       
-      // If this is for document content, update document automatically
       if (assistantType === "document" && onDocumentUpdate) {
         onDocumentUpdate(data.message);
       }
       
-      // Save the conversation to the database if we have a session ID
       if (sessionId && data.threadId) {
         try {
           await supabase.rpc('save_ai_conversation', {
@@ -285,7 +253,6 @@ export const useOpenAIAssistant = ({
         }
       }
       
-      // Return the response for potential document updates
       return data.message;
       
     } catch (err: any) {
