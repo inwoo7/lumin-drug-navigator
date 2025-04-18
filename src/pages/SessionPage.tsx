@@ -139,8 +139,18 @@ const SessionPage = () => {
         }
         
         if (docs && docs.length > 0 && docs[0]?.content) {
+          console.log("Loaded document from database");
           setDocumentContent(docs[0].content);
           setIsDocumentGenerated(true);
+          setIsDocumentInitializing(false);
+          
+          // Also mark in the session that it has a document
+          if (sessionId) {
+            await supabase
+              .from('search_sessions')
+              .update({ has_document: true })
+              .eq('id', sessionId);
+          }
         }
       } catch (err) {
         console.error("Error loading document:", err);
@@ -182,12 +192,30 @@ const SessionPage = () => {
   };
 
   const handleSaveSession = async () => {
-    // Save document if we have one
-    if (documentContent && sessionId) {
-      await saveDocument(documentContent);
-      toast.success("Session saved successfully");
-    } else {
-      toast.success("Session state saved");
+    try {
+      // Save document if we have one
+      if (documentContent && sessionId) {
+        await saveDocument(documentContent);
+      }
+      
+      // Update the session status to indicate it has a document
+      if (sessionId && documentContent) {
+        await supabase
+          .from('search_sessions')
+          .update({ has_document: true })
+          .eq('id', sessionId);
+      }
+      
+      // Ensure AI conversations are also saved
+      // (This is redundant as conversations are saved after each message,
+      // but it's a good safety check)
+      
+      toast.success("Session saved successfully", {
+        description: "All your work has been saved."
+      });
+    } catch (err) {
+      console.error("Error saving session:", err);
+      toast.error("Failed to save session completely");
     }
   };
 

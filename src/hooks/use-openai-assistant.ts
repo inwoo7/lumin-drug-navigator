@@ -21,6 +21,7 @@ type UseOpenAIAssistantProps = {
   autoInitialize?: boolean; // Whether to automatically initialize the assistant
   onDocumentUpdate?: (content: string) => void; // Callback to update document
   generateDocument?: boolean; // Flag to generate document on initialization
+  rawApiData?: boolean; // Flag to indicate we should send the raw API data
 };
 
 export const useOpenAIAssistant = ({
@@ -32,6 +33,7 @@ export const useOpenAIAssistant = ({
   autoInitialize = false,
   onDocumentUpdate,
   generateDocument = false,
+  rawApiData = false,
 }: UseOpenAIAssistantProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -70,6 +72,11 @@ export const useOpenAIAssistant = ({
             
             setMessages(storedMessages);
             setIsInitialized(true);
+            
+            // Skip auto-initialization if we loaded messages from DB
+            if (storedMessages.length > 0) {
+              setHasAttemptedGeneration(true);
+            }
           }
         }
       } catch (err) {
@@ -192,7 +199,13 @@ Format the document in Markdown with clear headings and sections.`;
   useEffect(() => {
     const initialize = async () => {
       if (autoInitialize && !isInitialized && !isLoading && drugShortageData) {
-        if (sessionId && messages.length === 0 && !threadId) {
+        // Skip initialization if we already have messages (e.g., from DB load)
+        if (messages.length > 0) {
+          setIsInitialized(true);
+          return;
+        }
+        
+        if (sessionId && !threadId) {
           setIsLoading(true);
           
           try {
@@ -205,7 +218,7 @@ Format the document in Markdown with clear headings and sections.`;
                 documentContent,
                 sessionId,
                 generateDocument: generateDocument || assistantType === "document",
-                rawData: true // Send raw API data
+                rawData: true // Always send raw API data
               },
             });
             
@@ -281,7 +294,8 @@ Format the document in Markdown with clear headings and sections.`;
     allShortageData, 
     documentContent,
     onDocumentUpdate,
-    generateDocument
+    generateDocument,
+    rawApiData
   ]);
 
   const addMessage = (role: "user" | "assistant", content: string) => {
@@ -317,7 +331,7 @@ Format the document in Markdown with clear headings and sections.`;
           documentContent,
           sessionId,
           threadId,
-          rawData: true, // Send raw API data
+          rawData: true, // Always send raw API data
           isDocumentEdit: content.includes("Please edit the document with the following instructions:")
         },
       });

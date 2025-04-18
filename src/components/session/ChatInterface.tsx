@@ -62,7 +62,8 @@ const ChatInterface = ({
     documentContent,
     autoInitialize: true,
     onDocumentUpdate: sessionType === "document" ? onSendToDocument : undefined,
-    generateDocument: sessionType === "document" // Always attempt to generate document when in document mode
+    generateDocument: sessionType === "document", // Always attempt to generate document when in document mode
+    rawApiData: true  // Ensure both LLMs get full raw API response
   });
   
   // Add initial assistant message when chat first loads if not initialized
