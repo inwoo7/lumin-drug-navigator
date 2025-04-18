@@ -38,6 +38,7 @@ export const useOpenAIAssistant = ({
   const [error, setError] = useState<string | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
+  const [hasAttemptedGeneration, setHasAttemptedGeneration] = useState<boolean>(false);
 
   useEffect(() => {
     const loadConversation = async () => {
@@ -79,6 +80,115 @@ export const useOpenAIAssistant = ({
     loadConversation();
   }, [sessionId, assistantType]);
 
+  // This effect triggers document generation when drug data is available
+  useEffect(() => {
+    const generateDocumentFromData = async () => {
+      if (
+        assistantType === "document" && 
+        generateDocument && 
+        drugShortageData && 
+        !hasAttemptedGeneration && 
+        sessionId &&
+        !isLoading
+      ) {
+        setHasAttemptedGeneration(true);
+        setIsLoading(true);
+        
+        try {
+          const generationPrompt = `Generate a comprehensive drug shortage management plan for ${drugShortageData.brand_name || drugShortageData.drug_name}. 
+Include the following sections:
+1. Executive Summary - Overview of the shortage situation
+2. Product Details - Information about the affected medication
+3. Shortage Impact Assessment - How this affects patient care
+4. Therapeutic Alternatives - Available alternatives with dosing information
+5. Conservation Strategies - How to manage limited supply
+6. Patient Prioritization - Criteria for allocation if needed
+7. Implementation Plan - Steps for implementing the management plan
+8. Communication Strategy - How to communicate with staff and patients
+
+Use the complete drug shortage data to create a professional, detailed, and actionable document. 
+Include evidence-based recommendations where possible.
+Format the document in Markdown with clear headings and sections.`;
+
+          const { data, error } = await supabase.functions.invoke("openai-assistant", {
+            body: {
+              assistantType: "document",
+              messages: [{
+                role: "user",
+                content: generationPrompt
+              }],
+              drugData: drugShortageData,
+              allShortageData: allShortageData || [],
+              sessionId,
+              generateDocument: true,
+              rawData: true // Flag to indicate we need raw API data
+            },
+          });
+          
+          if (error) {
+            console.error("Error generating document:", error);
+            return;
+          }
+          
+          if (data.error) {
+            console.error("Error from document generation:", data.error);
+            return;
+          }
+          
+          // Set thread ID for future messages
+          if (data.threadId) {
+            setThreadId(data.threadId);
+          }
+          
+          // Update document via callback
+          if (onDocumentUpdate && data.message) {
+            onDocumentUpdate(data.message);
+          }
+          
+          // Add the system message to chat history
+          addMessage("assistant", "I've generated a document based on the drug shortage data. You can now ask me to make changes or explain any part of it.");
+          
+          // Save this conversation to the database
+          if (sessionId && data.threadId) {
+            try {
+              await supabase.rpc('save_ai_conversation', {
+                p_session_id: sessionId,
+                p_assistant_type: assistantType,
+                p_thread_id: data.threadId,
+                p_messages: JSON.stringify([{
+                  id: Date.now().toString(),
+                  role: "assistant",
+                  content: "I've generated a document based on the drug shortage data. You can now ask me to make changes or explain any part of it.",
+                  timestamp: new Date().toISOString()
+                }])
+              });
+            } catch (saveErr) {
+              console.error("Error saving conversation:", saveErr);
+            }
+          }
+          
+          setIsInitialized(true);
+        } catch (err: any) {
+          console.error("Error generating document:", err);
+          setError(err.message || "An error occurred");
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+    
+    generateDocumentFromData();
+  }, [
+    assistantType, 
+    generateDocument, 
+    drugShortageData, 
+    hasAttemptedGeneration,
+    sessionId, 
+    isLoading,
+    onDocumentUpdate,
+    allShortageData
+  ]);
+
   useEffect(() => {
     const initialize = async () => {
       if (autoInitialize && !isInitialized && !isLoading && drugShortageData) {
@@ -95,6 +205,7 @@ export const useOpenAIAssistant = ({
                 documentContent,
                 sessionId,
                 generateDocument: generateDocument || assistantType === "document",
+                rawData: true // Send raw API data
               },
             });
             
@@ -206,6 +317,8 @@ export const useOpenAIAssistant = ({
           documentContent,
           sessionId,
           threadId,
+          rawData: true, // Send raw API data
+          isDocumentEdit: content.includes("Please edit the document with the following instructions:")
         },
       });
       

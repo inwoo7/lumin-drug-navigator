@@ -10,9 +10,10 @@ import DocumentEditor from "@/components/session/DocumentEditor";
 import { Link } from "react-router-dom";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { useSession, createSession } from "@/hooks/use-drug-shortages";
+import { useSession, createSession, useDrugShortageReport } from "@/hooks/use-drug-shortages";
 import { supabase } from "@/integrations/supabase/client";
 import { SessionDocument } from "@/types/supabase-rpc";
+import { useOpenAIAssistant } from "@/hooks/use-openai-assistant";
 
 const SessionPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -24,9 +25,39 @@ const SessionPage = () => {
   const [selectedReportId, setSelectedReportId] = useState<string | undefined>();
   const [selectedReportType, setSelectedReportType] = useState<'shortage' | 'discontinuation'>('shortage');
   const [activeTab, setActiveTab] = useState("info");
+  const [isDocumentInitializing, setIsDocumentInitializing] = useState(false);
+  const [isDocumentGenerated, setIsDocumentGenerated] = useState(false);
   
   // Use our hook to load session data
   const { session, isLoading: isSessionLoading, isError: isSessionError } = useSession(sessionId);
+  
+  // Get drug shortage report data for the selected report
+  const { report: selectedReportData, isLoading: isReportLoading } = useDrugShortageReport(
+    selectedReportId, 
+    selectedReportType, 
+    sessionId
+  );
+  
+  // Initialize the Document AI Assistant (we do this early to start document generation)
+  const documentAssistant = useOpenAIAssistant({
+    assistantType: "document",
+    sessionId,
+    drugShortageData: selectedReportData,
+    documentContent,
+    autoInitialize: !!selectedReportData && !isDocumentGenerated,
+    generateDocument: true,
+    onDocumentUpdate: (content) => {
+      setDocumentContent(content);
+      setIsDocumentGenerated(true);
+      saveDocument(content);
+    }
+  });
+  
+  useEffect(() => {
+    if (selectedReportData && !isDocumentGenerated && !isDocumentInitializing) {
+      setIsDocumentInitializing(true);
+    }
+  }, [selectedReportData, isDocumentGenerated, isDocumentInitializing]);
   
   useEffect(() => {
     const initializeSession = async () => {
@@ -109,6 +140,7 @@ const SessionPage = () => {
         
         if (docs && docs.length > 0 && docs[0]?.content) {
           setDocumentContent(docs[0].content);
+          setIsDocumentGenerated(true);
         }
       } catch (err) {
         console.error("Error loading document:", err);
@@ -163,11 +195,21 @@ const SessionPage = () => {
   const handleReportSelect = (reportId: string, reportType: 'shortage' | 'discontinuation') => {
     setSelectedReportId(reportId);
     setSelectedReportType(reportType);
+    // Reset document generation state when selecting a new report
+    if (isDocumentGenerated) {
+      setIsDocumentGenerated(false);
+      setIsDocumentInitializing(true);
+    }
   };
 
   // Handle tab change
   const handleTabChange = (value: string) => {
     setActiveTab(value);
+    
+    // If switching to document tab and we don't have a document yet, initialize it
+    if (value === "document" && !isDocumentGenerated && selectedReportData) {
+      setIsDocumentInitializing(true);
+    }
   };
 
   if (isLoading || isSessionLoading) {
@@ -236,34 +278,46 @@ const SessionPage = () => {
         </TabsContent>
         
         <TabsContent value="document" className="mt-4">
-          <Card className="mb-4 border-amber-200 bg-amber-50">
-            <CardContent className="py-3">
-              <div className="flex items-center">
-                <AlertTriangle className="h-5 w-5 text-amber-500 mr-2" />
-                <p className="text-sm text-amber-700">
-                  Use the document editor to create a response plan. The AI assistant can help you generate content and answer questions.
-                </p>
+          {(isDocumentInitializing && !isDocumentGenerated) ? (
+            <div className="flex items-center justify-center min-h-[50vh]">
+              <div className="text-center">
+                <div className="w-16 h-16 border-4 border-t-lumin-teal border-r-lumin-teal border-b-gray-200 border-l-gray-200 rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-gray-500">Generating {drugName} shortage document...</p>
+                <p className="text-xs text-gray-400 mt-2">This may take a moment as our AI analyzes the shortage data</p>
               </div>
-            </CardContent>
-          </Card>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <DocumentEditor 
-              drugName={drugName} 
-              sessionId={sessionId}
-              onContentChange={handleUpdateDocument} 
-              initialContent={documentContent}
-            />
-            <ChatInterface 
-              drugName={drugName} 
-              sessionType="document" 
-              sessionId={sessionId}
-              reportId={selectedReportId}
-              reportType={selectedReportType}
-              documentContent={documentContent}
-              onSendToDocument={handleSendToDocument} 
-            />
-          </div>
+            </div>
+          ) : (
+            <>
+              <Card className="mb-4 border-amber-200 bg-amber-50">
+                <CardContent className="py-3">
+                  <div className="flex items-center">
+                    <AlertTriangle className="h-5 w-5 text-amber-500 mr-2" />
+                    <p className="text-sm text-amber-700">
+                      Use the document editor to create a response plan. The AI assistant can help you generate content and answer questions.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <DocumentEditor 
+                  drugName={drugName} 
+                  sessionId={sessionId}
+                  onContentChange={handleUpdateDocument} 
+                  initialContent={documentContent}
+                />
+                <ChatInterface 
+                  drugName={drugName} 
+                  sessionType="document" 
+                  sessionId={sessionId}
+                  reportId={selectedReportId}
+                  reportType={selectedReportType}
+                  documentContent={documentContent}
+                  onSendToDocument={handleSendToDocument} 
+                />
+              </div>
+            </>
+          )}
         </TabsContent>
       </Tabs>
     </div>

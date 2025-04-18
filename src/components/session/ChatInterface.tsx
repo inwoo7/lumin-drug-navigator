@@ -1,12 +1,12 @@
-
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { SendIcon, Loader2 } from "lucide-react";
+import { SendIcon, Loader2, FileEdit, AlertTriangle } from "lucide-react";
 import { useOpenAIAssistant, Message as AIMessage, AssistantType } from "@/hooks/use-openai-assistant";
 import { useDrugShortageReport, useDrugShortageSearch } from "@/hooks/use-drug-shortages";
+import { toast } from "sonner";
 
 interface ChatInterfaceProps {
   drugName: string;
@@ -29,6 +29,7 @@ const ChatInterface = ({
 }: ChatInterfaceProps) => {
   const [inputMessage, setInputMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
   
   // Get drug shortage report data
   const { report, isLoading: isReportLoading } = useDrugShortageReport(
@@ -60,19 +61,28 @@ const ChatInterface = ({
     allShortageData: shortages?.length > 0 ? shortages : undefined,
     documentContent,
     autoInitialize: true,
-    onDocumentUpdate: sessionType === "document" ? onSendToDocument : undefined
+    onDocumentUpdate: sessionType === "document" ? onSendToDocument : undefined,
+    generateDocument: sessionType === "document" // Always attempt to generate document when in document mode
   });
   
   // Add initial assistant message when chat first loads if not initialized
   useEffect(() => {
     if (messages.length === 0 && !isReportLoading && !isAILoading && !isInitialized) {
-      const initialMessage = sessionType === "info"
-        ? `Hello! I'm your AI assistant for drug shortage information. I can provide insights about ${drugName} shortages, alternative therapies, and conservation strategies. How can I help you today?`
-        : `I'm here to help you create a document about the ${drugName} shortage. You can ask me to suggest content, format text, or provide clinical information. What would you like to include in your document?`;
+      let initialMessage = "";
+      
+      if (sessionType === "info") {
+        initialMessage = `Hello! I'm your AI assistant for drug shortage information. I can provide insights about ${drugName} shortages, alternative therapies, and conservation strategies. How can I help you today?`;
+      } else {
+        initialMessage = `I've analyzed the ${drugName} shortage information and generated a document for you. You can ask me to modify specific sections, add new content, or explain any part of the document.`;
+        
+        if (!documentContent) {
+          initialMessage += ` I'll create a comprehensive shortage management plan once the data is loaded.`;
+        }
+      }
       
       addMessage("assistant", initialMessage);
     }
-  }, [drugName, sessionType, messages.length, report, isReportLoading, isAILoading, isInitialized, addMessage]);
+  }, [drugName, sessionType, messages.length, report, isReportLoading, isAILoading, isInitialized, addMessage, documentContent]);
 
   useEffect(() => {
     // Scroll to bottom when messages change
@@ -94,19 +104,35 @@ const ChatInterface = ({
       return;
     }
     
-    // If we don't have a report ID, use a simpler prompt
-    if (!report && !reportId) {
-      // We'll still send the message since we have the drug name
-      const message = inputMessage;
+    // Special handling for document edit mode
+    if (sessionType === "document" && isEditMode) {
+      const editingPrompt = `Please edit the document with the following instructions: ${inputMessage}. 
+Return ONLY the complete updated document content.`;
+      
+      addMessage("user", inputMessage);
       setInputMessage("");
-      // If this is a document assistant, try to update document with result
-      await sendMessage(message);
+      
+      // Show loading state with specific edit message
+      toast.loading("Editing document...", { id: "document-edit" });
+      
+      try {
+        const updatedContent = await sendMessage(editingPrompt);
+        if (updatedContent && onSendToDocument) {
+          onSendToDocument(updatedContent);
+          toast.success("Document updated successfully", { id: "document-edit" });
+        }
+      } catch (error) {
+        console.error("Error updating document:", error);
+        toast.error("Failed to update document", { id: "document-edit" });
+      }
+      
+      setIsEditMode(false);
       return;
     }
     
+    // Standard message handling
     const message = inputMessage;
     setInputMessage("");
-    // Send message - document updates are handled automatically via onDocumentUpdate callback
     await sendMessage(message);
   };
 
@@ -117,10 +143,21 @@ const ChatInterface = ({
     }
   };
 
+  // Direct document editing mode
+  const toggleEditMode = () => {
+    setIsEditMode(!isEditMode);
+    if (!isEditMode) {
+      addMessage("assistant", "I'm ready to edit the document. Please describe the changes you want to make, and I'll update the document directly.");
+    } else {
+      addMessage("assistant", "I've exited document editing mode. You can continue asking questions about the shortage.");
+    }
+  };
+
   // This function is kept for backward compatibility but the automatic update is now preferred
   const handleSendToDoc = (content: string) => {
     if (onSendToDocument) {
       onSendToDocument(content);
+      toast.success("Document updated");
     }
   };
 
@@ -129,7 +166,30 @@ const ChatInterface = ({
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="px-4 py-3 border-b">
-        <CardTitle className="text-md">AI Assistant</CardTitle>
+        <div className="flex justify-between items-center">
+          <CardTitle className="text-md">AI Assistant</CardTitle>
+          {sessionType === "document" && (
+            <Button 
+              size="sm" 
+              variant={isEditMode ? "default" : "outline"}
+              onClick={toggleEditMode}
+              className={isEditMode ? "bg-blue-600 hover:bg-blue-700" : ""}
+            >
+              <FileEdit className="h-4 w-4 mr-2" />
+              {isEditMode ? "Exit Edit Mode" : "Edit Document"}
+            </Button>
+          )}
+        </div>
+        {isEditMode && (
+          <div className="mt-2 text-xs bg-blue-50 p-2 rounded-md border border-blue-200">
+            <div className="flex items-start">
+              <AlertTriangle className="h-4 w-4 text-blue-500 mr-1 mt-0.5" />
+              <p className="text-blue-700">
+                Edit mode is active. Your message will be used to directly update the document.
+              </p>
+            </div>
+          </div>
+        )}
       </CardHeader>
       <CardContent className="flex-1 overflow-y-auto p-4">
         <div className="space-y-4">
@@ -148,7 +208,7 @@ const ChatInterface = ({
                 }`}
               >
                 <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                {message.role === "assistant" && sessionType === "document" && (
+                {message.role === "assistant" && sessionType === "document" && !isEditMode && (
                   <>
                     <Separator className="my-2" />
                     <Button
@@ -174,7 +234,9 @@ const ChatInterface = ({
                       ? "Loading drug shortage data..." 
                       : isAllShortagesLoading
                         ? "Loading all shortage data..."
-                        : "Generating response..."}
+                        : isEditMode
+                          ? "Updating document..."
+                          : "Generating response..."}
                   </p>
                 </div>
               </div>
@@ -189,12 +251,12 @@ const ChatInterface = ({
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type your message..."
-            className="min-h-[60px] resize-none"
+            placeholder={isEditMode ? "Describe your document changes here..." : "Type your message..."}
+            className={`min-h-[60px] resize-none ${isEditMode ? "border-blue-300 focus-visible:ring-blue-400" : ""}`}
             disabled={isLoading}
           />
           <Button
-            className="bg-lumin-teal hover:bg-lumin-teal/90 h-10 px-4"
+            className={`${isEditMode ? "bg-blue-600 hover:bg-blue-700" : "bg-lumin-teal hover:bg-lumin-teal/90"} h-10 px-4`}
             disabled={inputMessage.trim() === "" || isLoading}
             onClick={handleSendMessage}
           >
