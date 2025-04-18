@@ -1,3 +1,4 @@
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -23,15 +24,16 @@ const Dashboard = () => {
   useEffect(() => {
     const fetchRecentSessions = async () => {
       try {
-        // In a real app, this would fetch actual data from Supabase
-        // For now, let's use mock data
-        const mockSessions = [
-          { id: "1", drug_name: "Amoxicillin", created_at: "2023-04-15T10:30:00Z" },
-          { id: "2", drug_name: "Lisinopril", created_at: "2023-04-14T14:45:00Z" },
-          { id: "3", drug_name: "Metformin", created_at: "2023-04-13T09:15:00Z" },
-        ];
+        // Fetch real data from Supabase
+        const { data: sessions, error } = await supabase
+          .from('search_sessions')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(5);
+
+        if (error) throw error;
         
-        setRecentSessions(mockSessions);
+        setRecentSessions(sessions || []);
       } catch (error) {
         console.error("Error fetching recent sessions:", error);
       } finally {
