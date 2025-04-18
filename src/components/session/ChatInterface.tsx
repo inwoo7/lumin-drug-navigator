@@ -191,18 +191,46 @@ Return ONLY the complete updated document content.`;
 
   // Format chat message for display
   const formatChatMessage = (content: string) => {
-    // Filter out JSON blocks that might be coming from API responses
-    if (content.includes('{"data":') && content.includes('"results":')) {
-      const lines = content.split("\n");
+    // Check if content contains JSON-like structures or API responses
+    if (
+      content.includes('{"data":') || 
+      content.includes('"results":') || 
+      content.includes('"shortage_id":') ||
+      content.includes('"api":') ||
+      content.includes('"discontinued":')
+    ) {
+      // Identify and remove JSON blocks from content
+      let lines = content.split("\n");
+      
+      // Filter out JSON-like content
       const filteredLines = lines.filter(line => {
-        // Only keep lines that aren't JSON structure from API or markdown code blocks with JSON
-        return !(line.includes('{"data":') || 
-               line.includes('"results":') || 
-               line.includes("```json") || 
-               line.includes("```"));
+        return !(
+          line.includes('{') && (
+            line.includes('"data":') || 
+            line.includes('"results":') || 
+            line.includes('"shortage_id":') ||
+            line.includes('"api":') ||
+            line.includes('"discontinued":') ||
+            line.includes('"id":') ||
+            line.includes('"drug_name":')
+          ) ||
+          line.includes('```json') || 
+          line.includes('```') ||
+          line.match(/^\s*[\[\]\{\}]\s*$/) // Lines with just brackets
+        );
       });
-      return filteredLines.join("\n");
+      
+      // Join the filtered lines back into a single string
+      const filteredContent = filteredLines.join("\n");
+      
+      // If filtering removed everything, provide a summary
+      if (filteredContent.trim() === '') {
+        return "I've analyzed the drug shortage data and I'm ready to help answer your questions.";
+      }
+      
+      return filteredContent;
     }
+    
     return content;
   };
 
@@ -211,28 +239,7 @@ Return ONLY the complete updated document content.`;
       <CardHeader className="px-4 py-3 border-b">
         <div className="flex justify-between items-center">
           <CardTitle className="text-md">AI Assistant</CardTitle>
-          {sessionType === "document" && (
-            <Button 
-              size="sm" 
-              variant={isEditMode ? "default" : "outline"}
-              onClick={toggleEditMode}
-              className={isEditMode ? "bg-blue-600 hover:bg-blue-700" : ""}
-            >
-              <FileEdit className="h-4 w-4 mr-2" />
-              {isEditMode ? "Exit Edit Mode" : "Edit Document"}
-            </Button>
-          )}
         </div>
-        {isEditMode && (
-          <div className="mt-2 text-xs bg-blue-50 p-2 rounded-md border border-blue-200">
-            <div className="flex items-start">
-              <AlertTriangle className="h-4 w-4 text-blue-500 mr-1 mt-0.5" />
-              <p className="text-blue-700">
-                Edit mode is active. Your message will be used to directly update the document.
-              </p>
-            </div>
-          </div>
-        )}
       </CardHeader>
       <CardContent className="flex-1 overflow-y-auto p-4">
         <div className="space-y-4">

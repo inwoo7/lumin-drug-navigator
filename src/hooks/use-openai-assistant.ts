@@ -429,29 +429,44 @@ Format the document in Markdown with clear headings and sections.`;
     return newMessage;
   };
 
+  // Enhanced function to send messages with document context
   const sendMessage = async (content: string) => {
     try {
       setIsLoading(true);
       setError(null);
       
-      addMessage("user", content);
+      // Create a new message for UI
+      const userMessage = addMessage("user", content);
       
+      // Prepare request payload
       const messagesForAPI = [{
         role: "user",
         content
       }];
       
+      // For document editing, ensure the LLM has context of the current document
+      let contextualContent = content;
+      const isDocEdit = content.includes("Please edit the document with the following instructions:");
+      
+      if (isDocEdit && documentContent) {
+        contextualContent = `${content}\n\nCurrent document content:\n\n${documentContent}`;
+      }
+      
+      // Make the API call
       const { data, error } = await supabase.functions.invoke("openai-assistant", {
         body: {
           assistantType,
-          messages: messagesForAPI,
+          messages: [{
+            role: "user",
+            content: contextualContent // Send contextual content with document if needed
+          }],
           drugData: drugShortageData,
           allShortageData: allShortageData || [],
           documentContent,
           sessionId,
           threadId,
           rawData: false, // Never send raw data for regular messages
-          isDocumentEdit: content.includes("Please edit the document with the following instructions:")
+          isDocumentEdit: isDocEdit
         },
       }).catch(err => {
         console.error("Error invoking assistant function:", err);
@@ -464,7 +479,8 @@ Format the document in Markdown with clear headings and sections.`;
         toast.error("Failed to get response from AI assistant");
         
         // Add a fallback message
-        addMessage("assistant", "I'm sorry, I couldn't process your request due to a connection issue. Please try again later.");
+        const fallbackMessage = addMessage("assistant", "I'm sorry, I couldn't process your request due to a connection issue. Please try again later.");
+        saveConversation([userMessage, fallbackMessage]);
         return;
       }
       
@@ -474,7 +490,8 @@ Format the document in Markdown with clear headings and sections.`;
         toast.error(data.error || "Error processing your request");
         
         // Add a fallback message
-        addMessage("assistant", "I'm sorry, there was an error processing your request. Please try again with a different question.");
+        const fallbackMessage = addMessage("assistant", "I'm sorry, there was an error processing your request. Please try again with a different question.");
+        saveConversation([userMessage, fallbackMessage]);
         return;
       }
       
@@ -483,48 +500,66 @@ Format the document in Markdown with clear headings and sections.`;
       }
       
       if (data && data.message) {
-        addMessage("assistant", data.message);
+        const assistantMessage = addMessage("assistant", data.message);
         
-        if (assistantType === "document" && onDocumentUpdate) {
+        if (assistantType === "document" && onDocumentUpdate && isDocEdit) {
           onDocumentUpdate(data.message);
         }
+        
+        // Save conversation after adding new messages
+        saveConversation([userMessage, assistantMessage]);
+        
+        return data.message;
       } else {
         // Fallback message if no response
-        addMessage("assistant", "I'm sorry, I wasn't able to generate a proper response. Please try rephrasing your question.");
+        const fallbackMessage = addMessage("assistant", "I'm sorry, I wasn't able to generate a proper response. Please try rephrasing your question.");
+        saveConversation([userMessage, fallbackMessage]);
       }
-      
-      // Save conversation to database if we have valid data
-      if (sessionId && data && data.threadId) {
-        try {
-          await supabase.rpc('save_ai_conversation', {
-            p_session_id: sessionId,
-            p_assistant_type: assistantType,
-            p_thread_id: data.threadId,
-            p_messages: JSON.stringify(
-              [...messages, { 
-                id: Date.now().toString(),
-                role: "assistant",
-                content: data.message || "No response generated",
-                timestamp: new Date().toISOString() 
-              }]
-            )
-          });
-        } catch (saveErr) {
-          console.error("Error saving conversation:", saveErr);
-        }
-      }
-      
-      return data ? data.message : undefined;
-      
     } catch (err: any) {
       console.error("Error in sendMessage:", err);
       setError(err.message || "An error occurred");
       toast.error("Failed to communicate with AI assistant");
       
       // Add a fallback message
-      addMessage("assistant", "I apologize, but I encountered a technical error. Please try again later.");
+      const errorMessage = addMessage("assistant", "I apologize, but I encountered a technical error. Please try again later.");
+      saveConversation([addMessage("user", content), errorMessage]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Helper function to save conversation to database
+  const saveConversation = async (newMessages?: Message[]) => {
+    if (!sessionId || !threadId) return;
+    
+    try {
+      // Prepare the full message list to save (include new messages if provided)
+      const allMessages = newMessages 
+        ? [...messages, ...newMessages]
+        : messages;
+      
+      // Skip saving if there are no messages
+      if (allMessages.length === 0) return;
+      
+      // Format messages for database storage
+      const formattedMessages = allMessages.map(msg => ({
+        id: msg.id,
+        role: msg.role,
+        content: msg.content,
+        timestamp: msg.timestamp.toISOString()
+      }));
+      
+      // Save to database
+      await supabase.rpc('save_ai_conversation', {
+        p_session_id: sessionId,
+        p_assistant_type: assistantType,
+        p_thread_id: threadId,
+        p_messages: JSON.stringify(formattedMessages)
+      });
+      
+      console.log(`Saved ${formattedMessages.length} messages for ${assistantType} conversation`);
+    } catch (saveErr) {
+      console.error("Error saving conversation:", saveErr);
     }
   };
 

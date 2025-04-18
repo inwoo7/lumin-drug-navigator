@@ -30,6 +30,7 @@ const SessionPage = () => {
   const [docGenerationError, setDocGenerationError] = useState(false);
   const [docLoadAttempted, setDocLoadAttempted] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   
   // Use our hook to load session data
   const { session, isLoading: isSessionLoading, isError: isSessionError } = useSession(sessionId);
@@ -59,6 +60,27 @@ const SessionPage = () => {
       }
     }
   });
+  
+  // Load both document and chat conversations before allowing user interaction
+  useEffect(() => {
+    const preloadSession = async () => {
+      if (!sessionId) return;
+      setIsInitialLoading(true);
+      
+      try {
+        // Load document first
+        await loadDocument();
+        
+        // Then set loading to false to display the page
+        setIsInitialLoading(false);
+      } catch (err) {
+        console.error("Error preloading session:", err);
+        setIsInitialLoading(false);
+      }
+    };
+    
+    preloadSession();
+  }, [sessionId]);
   
   // Effect to handle document initialization state
   useEffect(() => {
@@ -153,53 +175,54 @@ const SessionPage = () => {
     initializeSession();
   }, [sessionId, location.state, navigate, session, isSessionLoading]);
 
-  // Load document from database when session is loaded - this should happen FIRST
-  useEffect(() => {
-    const loadDocument = async () => {
-      // Exit early if:
-      // 1. We don't have a sessionId
-      // 2. We've already tried loading (prevents double loads)
-      // 3. We already have document content
-      // 4. We've already generated a document
-      if (!sessionId || docLoadAttempted || documentContent !== "" || isDocumentGenerated) return;
-      
-      try {
-        console.log("Attempting to load document from database...");
-        setDocLoadAttempted(true); // Mark as attempted immediately to prevent double loads
-        
-        const { data: docs, error } = await supabase
-          .rpc('get_session_document', { 
-            p_session_id: sessionId 
-          }) as { data: SessionDocument[] | null, error: any };
-          
-        if (error) {
-          console.error("Error loading document:", error);
-          return;
-        }
-        
-        if (docs && docs.length > 0 && docs[0]?.content) {
-          console.log("Loaded document from database");
-          setDocumentContent(docs[0].content);
-          setIsDocumentGenerated(true);
-          setIsDocumentInitializing(false);
-          
-          // Also mark in the session that it has a document
-          if (sessionId) {
-            await supabase
-              .from('search_sessions')
-              .update({ has_document: true })
-              .eq('id', sessionId);
-          }
-        } else {
-          console.log("No document found in database");
-        }
-      } catch (err) {
-        console.error("Error loading document:", err);
-      }
-    };
+  // Function to load document from database
+  const loadDocument = async () => {
+    // Exit early if:
+    // 1. We don't have a sessionId
+    // 2. We've already tried loading (prevents double loads)
+    if (!sessionId || docLoadAttempted) return;
     
-    loadDocument();
-  }, [sessionId, docLoadAttempted, documentContent, isDocumentGenerated]);
+    try {
+      console.log("Attempting to load document from database...");
+      setDocLoadAttempted(true); // Mark as attempted immediately to prevent double loads
+      
+      const { data: docs, error } = await supabase
+        .rpc('get_session_document', { 
+          p_session_id: sessionId 
+        }) as { data: SessionDocument[] | null, error: any };
+        
+      if (error) {
+        console.error("Error loading document:", error);
+        return;
+      }
+      
+      if (docs && docs.length > 0 && docs[0]?.content) {
+        console.log("Loaded document from database");
+        setDocumentContent(docs[0].content);
+        setIsDocumentGenerated(true);
+        setIsDocumentInitializing(false);
+        
+        // Also mark in the session that it has a document
+        if (sessionId) {
+          await supabase
+            .from('search_sessions')
+            .update({ has_document: true })
+            .eq('id', sessionId);
+        }
+      } else {
+        console.log("No document found in database");
+      }
+    } catch (err) {
+      console.error("Error loading document:", err);
+    }
+  };
+    
+  // Trigger document loading on initial mount
+  useEffect(() => {
+    if (sessionId && !docLoadAttempted && !isDocumentGenerated && documentContent === "") {
+      loadDocument();
+    }
+  }, [sessionId, docLoadAttempted, isDocumentGenerated, documentContent]);
 
   const handleUpdateDocument = (content: string) => {
     setDocumentContent(content);
@@ -285,7 +308,8 @@ const SessionPage = () => {
     setActiveTab(value);
   };
 
-  if (isLoading || isSessionLoading) {
+  // Show loading screen if we're in initial loading state
+  if (isInitialLoading || isLoading || isSessionLoading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
         <div className="text-center">
