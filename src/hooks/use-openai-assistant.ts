@@ -49,6 +49,8 @@ export const useOpenAIAssistant = ({
     const loadConversation = async () => {
       if (!sessionId) return;
       
+      console.log(`Loading conversation for ${assistantType} assistant with session ID: ${sessionId}`);
+      
       try {
         const { data: conversations, error } = await supabase
           .rpc('get_ai_conversation', { 
@@ -61,34 +63,53 @@ export const useOpenAIAssistant = ({
           return;
         }
         
+        console.log(`Retrieved conversation data for ${assistantType}:`, conversations);
+        
         if (conversations && conversations.length > 0) {
           const conversationData = conversations[0];
+          console.log(`Found conversation with thread ID: ${conversationData.thread_id}`);
           setThreadId(conversationData.thread_id);
           
           if (conversationData.messages && Array.isArray(conversationData.messages)) {
-            const storedMessages = conversationData.messages.map((msg: any) => ({
-              id: msg.id,
-              role: msg.role as "user" | "assistant",
-              content: msg.content,
-              timestamp: new Date(msg.timestamp)
-            }));
+            // Parse and sort messages by timestamp to ensure correct order
+            const storedMessages = conversationData.messages
+              .map((msg: any) => ({
+                id: msg.id || Date.now().toString(),
+                role: msg.role as "user" | "assistant",
+                content: msg.content,
+                timestamp: new Date(msg.timestamp)
+              }))
+              .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
             
-            setMessages(storedMessages);
-            setIsInitialized(true);
+            console.log(`Loaded ${storedMessages.length} messages for ${assistantType} conversation`);
             
-            // Skip auto-initialization if we loaded messages from DB
             if (storedMessages.length > 0) {
+              console.log("First message:", storedMessages[0]);
+              console.log("Last message:", storedMessages[storedMessages.length - 1]);
+              
+              // Set messages in state
+              setMessages(storedMessages);
+              setIsInitialized(true);
               setHasAttemptedGeneration(true);
               setIsRestoredSession(true);
               setShouldSendRawData(false); // Don't send raw data for restored sessions
+              
+              console.log(`Successfully restored ${assistantType} conversation with ${storedMessages.length} messages`);
+            } else {
+              console.log(`No messages found in ${assistantType} conversation data`);
             }
+          } else {
+            console.log(`No valid messages array in conversation data for ${assistantType}`);
           }
+        } else {
+          console.log(`No existing ${assistantType} conversation found for session ID: ${sessionId}`);
         }
       } catch (err) {
-        console.error("Error loading conversation:", err);
+        console.error(`Error loading ${assistantType} conversation:`, err);
       }
     };
     
+    // Load conversation data as soon as the hook mounts
     loadConversation();
   }, [sessionId, assistantType]);
 
@@ -438,18 +459,17 @@ Format the document in Markdown with clear headings and sections.`;
       // Create a new message for UI
       const userMessage = addMessage("user", content);
       
-      // Prepare request payload
-      const messagesForAPI = [{
-        role: "user",
-        content
-      }];
+      // Check if this is a document edit request
+      const isDocEdit = content.includes("Please edit the document") || 
+                       (assistantType === "document" && content.includes("update the document"));
       
       // For document editing, ensure the LLM has context of the current document
       let contextualContent = content;
-      const isDocEdit = content.includes("Please edit the document with the following instructions:");
       
-      if (isDocEdit && documentContent) {
-        contextualContent = `${content}\n\nCurrent document content:\n\n${documentContent}`;
+      if (assistantType === "document" && documentContent) {
+        // Always provide document context for the document assistant 
+        contextualContent = `${content}\n\nCurrent document content:\n${documentContent}`;
+        console.log("Sending message with document context");
       }
       
       // Make the API call
@@ -458,7 +478,7 @@ Format the document in Markdown with clear headings and sections.`;
           assistantType,
           messages: [{
             role: "user",
-            content: contextualContent // Send contextual content with document if needed
+            content: contextualContent // Send contextual content with document
           }],
           drugData: drugShortageData,
           allShortageData: allShortageData || [],
@@ -502,7 +522,9 @@ Format the document in Markdown with clear headings and sections.`;
       if (data && data.message) {
         const assistantMessage = addMessage("assistant", data.message);
         
+        // Handle document updates
         if (assistantType === "document" && onDocumentUpdate && isDocEdit) {
+          console.log("Document edit request detected, updating document");
           onDocumentUpdate(data.message);
         }
         
