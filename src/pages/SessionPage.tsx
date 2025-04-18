@@ -27,6 +27,8 @@ const SessionPage = () => {
   const [activeTab, setActiveTab] = useState("info");
   const [isDocumentInitializing, setIsDocumentInitializing] = useState(false);
   const [isDocumentGenerated, setIsDocumentGenerated] = useState(false);
+  const [docGenerationError, setDocGenerationError] = useState(false);
+  const [docLoadAttempted, setDocLoadAttempted] = useState(false);
   
   // Use our hook to load session data
   const { session, isLoading: isSessionLoading, isError: isSessionError } = useSession(sessionId);
@@ -38,26 +40,43 @@ const SessionPage = () => {
     sessionId
   );
   
-  // Initialize the Document AI Assistant (we do this early to start document generation)
+  // Initialize the Document AI Assistant with error handling
   const documentAssistant = useOpenAIAssistant({
     assistantType: "document",
     sessionId,
     drugShortageData: selectedReportData,
     documentContent,
-    autoInitialize: !!selectedReportData && !isDocumentGenerated,
+    autoInitialize: !!selectedReportData && !isDocumentGenerated && !docLoadAttempted,
     generateDocument: true,
     onDocumentUpdate: (content) => {
       setDocumentContent(content);
       setIsDocumentGenerated(true);
+      setIsDocumentInitializing(false);
       saveDocument(content);
     }
   });
   
+  // Effect to handle document initialization state
   useEffect(() => {
-    if (selectedReportData && !isDocumentGenerated && !isDocumentInitializing) {
+    const timeoutId = setTimeout(() => {
+      // If initialization takes too long, assume there's an error
+      if (isDocumentInitializing && !isDocumentGenerated && !docGenerationError) {
+        setDocGenerationError(true);
+        setIsDocumentInitializing(false);
+        toast.error("Document generation timed out. Please try again.");
+      }
+    }, 25000); // 25 second timeout
+    
+    return () => clearTimeout(timeoutId);
+  }, [isDocumentInitializing, isDocumentGenerated, docGenerationError]);
+  
+  // Effect to set document initializing state
+  useEffect(() => {
+    if (selectedReportData && !isDocumentGenerated && !isDocumentInitializing && !docGenerationError && !docLoadAttempted) {
       setIsDocumentInitializing(true);
+      setDocLoadAttempted(true);
     }
-  }, [selectedReportData, isDocumentGenerated, isDocumentInitializing]);
+  }, [selectedReportData, isDocumentGenerated, isDocumentInitializing, docGenerationError, docLoadAttempted]);
   
   useEffect(() => {
     const initializeSession = async () => {
@@ -135,6 +154,7 @@ const SessionPage = () => {
           
         if (error) {
           console.error("Error loading document:", error);
+          setDocLoadAttempted(true);
           return;
         }
         
@@ -143,6 +163,7 @@ const SessionPage = () => {
           setDocumentContent(docs[0].content);
           setIsDocumentGenerated(true);
           setIsDocumentInitializing(false);
+          setDocLoadAttempted(true);
           
           // Also mark in the session that it has a document
           if (sessionId) {
@@ -151,9 +172,12 @@ const SessionPage = () => {
               .update({ has_document: true })
               .eq('id', sessionId);
           }
+        } else {
+          setDocLoadAttempted(true);
         }
       } catch (err) {
         console.error("Error loading document:", err);
+        setDocLoadAttempted(true);
       }
     };
     
@@ -235,8 +259,9 @@ const SessionPage = () => {
     setActiveTab(value);
     
     // If switching to document tab and we don't have a document yet, initialize it
-    if (value === "document" && !isDocumentGenerated && selectedReportData) {
+    if (value === "document" && !isDocumentGenerated && selectedReportData && !docGenerationError && !docLoadAttempted) {
       setIsDocumentInitializing(true);
+      setDocLoadAttempted(true);
     }
   };
 
@@ -312,6 +337,25 @@ const SessionPage = () => {
                 <div className="w-16 h-16 border-4 border-t-lumin-teal border-r-lumin-teal border-b-gray-200 border-l-gray-200 rounded-full animate-spin mx-auto mb-4"></div>
                 <p className="text-gray-500">Generating {drugName} shortage document...</p>
                 <p className="text-xs text-gray-400 mt-2">This may take a moment as our AI analyzes the shortage data</p>
+              </div>
+            </div>
+          ) : docGenerationError ? (
+            <div className="flex items-center justify-center min-h-[50vh]">
+              <div className="text-center">
+                <div className="bg-red-100 p-4 rounded-md mb-4">
+                  <p className="text-red-700">There was a problem generating the document.</p>
+                  <p className="text-red-600 text-sm mt-2">Please try again later or use the editor to write your own document.</p>
+                </div>
+                <Button 
+                  onClick={() => {
+                    setDocGenerationError(false);
+                    setIsDocumentInitializing(true);
+                    setDocLoadAttempted(false);
+                  }}
+                  className="mt-4"
+                >
+                  Try Again
+                </Button>
               </div>
             </div>
           ) : (

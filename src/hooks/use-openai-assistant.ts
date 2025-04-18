@@ -134,11 +134,15 @@ Format the document in Markdown with clear headings and sections.`;
           
           if (error) {
             console.error("Error generating document:", error);
+            toast.error("Error generating document. Please try again later.");
+            setIsLoading(false);
             return;
           }
           
           if (data.error) {
             console.error("Error from document generation:", data.error);
+            toast.error("Error generating document: " + data.error);
+            setIsLoading(false);
             return;
           }
           
@@ -178,6 +182,7 @@ Format the document in Markdown with clear headings and sections.`;
         } catch (err: any) {
           console.error("Error generating document:", err);
           setError(err.message || "An error occurred");
+          toast.error("Error generating document. Please try again later.");
         } finally {
           setIsLoading(false);
         }
@@ -196,47 +201,121 @@ Format the document in Markdown with clear headings and sections.`;
     allShortageData
   ]);
 
+  // This effect handles loading drug data for the information assistant
+  useEffect(() => {
+    const initializeInfoAssistant = async () => {
+      if (
+        assistantType === "shortage" && 
+        !hasAttemptedGeneration && 
+        drugShortageData && 
+        !isInitialized && 
+        !isLoading
+      ) {
+        setHasAttemptedGeneration(true);
+        setIsLoading(true);
+        
+        try {
+          // Don't send any initial message - let the user start the conversation
+          setIsInitialized(true);
+          setHasAttemptedGeneration(true);
+          
+          // Create a thread silently, so it's ready for when the user asks a question
+          const { data, error } = await supabase.functions.invoke("openai-assistant", {
+            body: {
+              assistantType: "shortage",
+              messages: [],
+              drugData: drugShortageData,
+              allShortageData: allShortageData || [],
+              sessionId,
+              createThreadOnly: true, // Only create thread, don't generate a message
+              rawData: true
+            },
+          });
+          
+          if (error) {
+            console.error("Error creating assistant thread:", error);
+            toast.error("Error initializing assistant. Using offline mode.");
+          } else if (data.threadId) {
+            setThreadId(data.threadId);
+          }
+          
+        } catch (err: any) {
+          console.error("Error initializing info assistant:", err);
+          toast.error("Error connecting to assistant service. Using offline mode.");
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+    
+    // Only run this for the shortage information assistant
+    if (assistantType === "shortage") {
+      initializeInfoAssistant();
+    }
+  }, [
+    assistantType,
+    drugShortageData,
+    isInitialized,
+    isLoading,
+    hasAttemptedGeneration,
+    allShortageData,
+    sessionId
+  ]);
+
   useEffect(() => {
     const initialize = async () => {
-      if (autoInitialize && !isInitialized && !isLoading && drugShortageData) {
-        // Skip initialization if we already have messages (e.g., from DB load)
-        if (messages.length > 0) {
-          setIsInitialized(true);
-          return;
-        }
+      // Skip if we've already initialized or if we're in the loading state
+      if (hasAttemptedGeneration || isInitialized || isLoading || !drugShortageData) {
+        return;
+      }
+      
+      // Skip initialization if we already have messages (e.g., from DB load)
+      if (messages.length > 0) {
+        setIsInitialized(true);
+        setHasAttemptedGeneration(true);
+        return;
+      }
+      
+      // Skip this initialization for the shortage assistant, it's handled in the separate effect
+      if (assistantType === "shortage") {
+        return;
+      }
+      
+      if (autoInitialize && sessionId && !threadId) {
+        setIsLoading(true);
         
-        if (sessionId && !threadId) {
-          setIsLoading(true);
+        try {
+          const { data, error } = await supabase.functions.invoke("openai-assistant", {
+            body: {
+              assistantType,
+              messages: [],
+              drugData: drugShortageData,
+              allShortageData: allShortageData || [],
+              documentContent,
+              sessionId,
+              generateDocument: generateDocument || assistantType === "document",
+              rawData: true // Always send raw API data
+            },
+          });
           
-          try {
-            const { data, error } = await supabase.functions.invoke("openai-assistant", {
-              body: {
-                assistantType,
-                messages: [],
-                drugData: drugShortageData,
-                allShortageData: allShortageData || [],
-                documentContent,
-                sessionId,
-                generateDocument: generateDocument || assistantType === "document",
-                rawData: true // Always send raw API data
-              },
-            });
-            
-            if (error) {
-              console.error("Error initializing assistant:", error);
-              toast.error("Failed to initialize AI assistant");
-              setError(error.message);
-              return;
+          if (error) {
+            console.error("Error initializing assistant:", error);
+            toast.error("Failed to initialize AI assistant. Using offline mode.");
+            setError(error.message);
+            return;
+          }
+          
+          if (data && data.error) {
+            console.error("Error from OpenAI assistant:", data.error);
+            toast.error(data.error || "Error processing request");
+            setError(data.error);
+            return;
+          }
+          
+          if (data) {
+            if (data.threadId) {
+              setThreadId(data.threadId);
             }
-            
-            if (data.error) {
-              console.error("Error from OpenAI assistant:", data.error);
-              toast.error(data.error);
-              setError(data.error);
-              return;
-            }
-            
-            setThreadId(data.threadId);
             
             if (data.messages && data.messages.length > 0) {
               const formattedMessages = data.messages.map((msg: any) => ({
@@ -254,7 +333,7 @@ Format the document in Markdown with clear headings and sections.`;
                   onDocumentUpdate(assistantMessages[0].content);
                 }
               }
-            } else {
+            } else if (data.message) {
               const initialMessage = {
                 id: Date.now().toString(),
                 role: "assistant" as const,
@@ -268,15 +347,16 @@ Format the document in Markdown with clear headings and sections.`;
                 onDocumentUpdate(data.message);
               }
             }
-            
-            setIsInitialized(true);
-          } catch (err: any) {
-            console.error("Error in initializing assistant:", err);
-            setError(err.message || "An error occurred");
-            toast.error("Failed to initialize AI assistant");
-          } finally {
-            setIsLoading(false);
           }
+          
+          setIsInitialized(true);
+          setHasAttemptedGeneration(true);
+        } catch (err: any) {
+          console.error("Error in initializing assistant:", err);
+          setError(err.message || "An error occurred");
+          toast.error("Failed to initialize AI assistant. Using offline mode.");
+        } finally {
+          setIsLoading(false);
         }
       }
     };
@@ -295,7 +375,8 @@ Format the document in Markdown with clear headings and sections.`;
     documentContent,
     onDocumentUpdate,
     generateDocument,
-    rawApiData
+    rawApiData,
+    hasAttemptedGeneration
   ]);
 
   const addMessage = (role: "user" | "assistant", content: string) => {
@@ -334,33 +415,48 @@ Format the document in Markdown with clear headings and sections.`;
           rawData: true, // Always send raw API data
           isDocumentEdit: content.includes("Please edit the document with the following instructions:")
         },
+      }).catch(err => {
+        console.error("Error invoking assistant function:", err);
+        throw new Error("Network error connecting to assistant service");
       });
       
       if (error) {
         console.error("Error calling OpenAI assistant:", error);
         setError(error.message || "Failed to get response from assistant");
         toast.error("Failed to get response from AI assistant");
+        
+        // Add a fallback message
+        addMessage("assistant", "I'm sorry, I couldn't process your request due to a connection issue. Please try again later.");
         return;
       }
       
-      if (data.error) {
+      if (data && data.error) {
         console.error("Error from OpenAI assistant:", data.error);
         setError(data.error);
-        toast.error(data.error);
+        toast.error(data.error || "Error processing your request");
+        
+        // Add a fallback message
+        addMessage("assistant", "I'm sorry, there was an error processing your request. Please try again with a different question.");
         return;
       }
       
-      if (data.threadId && !threadId) {
+      if (data && data.threadId && !threadId) {
         setThreadId(data.threadId);
       }
       
-      addMessage("assistant", data.message);
-      
-      if (assistantType === "document" && onDocumentUpdate) {
-        onDocumentUpdate(data.message);
+      if (data && data.message) {
+        addMessage("assistant", data.message);
+        
+        if (assistantType === "document" && onDocumentUpdate) {
+          onDocumentUpdate(data.message);
+        }
+      } else {
+        // Fallback message if no response
+        addMessage("assistant", "I'm sorry, I wasn't able to generate a proper response. Please try rephrasing your question.");
       }
       
-      if (sessionId && data.threadId) {
+      // Save conversation to database if we have valid data
+      if (sessionId && data && data.threadId) {
         try {
           await supabase.rpc('save_ai_conversation', {
             p_session_id: sessionId,
@@ -370,7 +466,7 @@ Format the document in Markdown with clear headings and sections.`;
               [...messages, { 
                 id: Date.now().toString(),
                 role: "assistant",
-                content: data.message,
+                content: data.message || "No response generated",
                 timestamp: new Date().toISOString() 
               }]
             )
@@ -380,12 +476,15 @@ Format the document in Markdown with clear headings and sections.`;
         }
       }
       
-      return data.message;
+      return data ? data.message : undefined;
       
     } catch (err: any) {
       console.error("Error in sendMessage:", err);
       setError(err.message || "An error occurred");
       toast.error("Failed to communicate with AI assistant");
+      
+      // Add a fallback message
+      addMessage("assistant", "I apologize, but I encountered a technical error. Please try again later.");
     } finally {
       setIsLoading(false);
     }

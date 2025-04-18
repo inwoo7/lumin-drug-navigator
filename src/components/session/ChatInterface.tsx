@@ -60,30 +60,27 @@ const ChatInterface = ({
     drugShortageData: report || { drug_name: drugName },
     allShortageData: shortages?.length > 0 ? shortages : undefined,
     documentContent,
-    autoInitialize: true,
+    autoInitialize: !isReportLoading, // Only auto-initialize when report is loaded
     onDocumentUpdate: sessionType === "document" ? onSendToDocument : undefined,
     generateDocument: sessionType === "document", // Always attempt to generate document when in document mode
     rawApiData: true  // Ensure both LLMs get full raw API response
   });
   
-  // Add initial assistant message when chat first loads if not initialized
+  // Add initial assistant message when chat first loads if not initialized and no messages
   useEffect(() => {
-    if (messages.length === 0 && !isReportLoading && !isAILoading && !isInitialized) {
+    if (messages.length === 0 && !isReportLoading && !isAILoading && isInitialized) {
       let initialMessage = "";
       
       if (sessionType === "info") {
-        initialMessage = `Hello! I'm your AI assistant for drug shortage information. I can provide insights about ${drugName} shortages, alternative therapies, and conservation strategies. How can I help you today?`;
+        initialMessage = `Hello! I'm here to help with information about ${drugName} shortages. Ask me about therapeutic alternatives, conservation strategies, or any questions you have about this shortage.`;
       } else {
-        initialMessage = `I've analyzed the ${drugName} shortage information and generated a document for you. You can ask me to modify specific sections, add new content, or explain any part of the document.`;
-        
-        if (!documentContent) {
-          initialMessage += ` I'll create a comprehensive shortage management plan once the data is loaded.`;
-        }
+        initialMessage = `I'm here to help you with your ${drugName} shortage document. Ask me to explain any section or suggest changes to the content.`;
       }
       
+      // Only add this intro message if we don't have any messages yet
       addMessage("assistant", initialMessage);
     }
-  }, [drugName, sessionType, messages.length, report, isReportLoading, isAILoading, isInitialized, addMessage, documentContent]);
+  }, [drugName, sessionType, messages.length, isInitialized, isReportLoading, isAILoading, addMessage]);
 
   useEffect(() => {
     // Scroll to bottom when messages change
@@ -100,7 +97,7 @@ const ChatInterface = ({
     // If we're waiting for the drug data, show a toast or message
     if (isReportLoading) {
       addMessage("user", inputMessage);
-      addMessage("assistant", "I'm still loading the drug shortage data. Please wait a moment before asking questions.");
+      addMessage("assistant", "I'm still loading the shortage data. Please wait a moment before asking questions.");
       setInputMessage("");
       return;
     }
@@ -121,6 +118,8 @@ Return ONLY the complete updated document content.`;
         if (updatedContent && onSendToDocument) {
           onSendToDocument(updatedContent);
           toast.success("Document updated successfully", { id: "document-edit" });
+        } else {
+          toast.error("Failed to update document", { id: "document-edit" });
         }
       } catch (error) {
         console.error("Error updating document:", error);
@@ -134,7 +133,12 @@ Return ONLY the complete updated document content.`;
     // Standard message handling
     const message = inputMessage;
     setInputMessage("");
-    await sendMessage(message);
+    try {
+      await sendMessage(message);
+    } catch (error) {
+      console.error("Error sending message:", error);
+      // Error is already handled in the hook, with fallback messages added
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
