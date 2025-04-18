@@ -1,4 +1,3 @@
-
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -35,6 +34,14 @@ export interface DrugShortageReport {
   tier_3: boolean;
   updated_date: string;
   type: 'shortage' | 'discontinuation';
+}
+
+interface ApiCompany {
+  name: string;
+}
+
+interface ApiShortageReason {
+  en_reason: string;
 }
 
 interface ApiResponse<T> {
@@ -85,6 +92,42 @@ class ApiError extends Error {
   }
 }
 
+// Transform API search results to our application format
+const transformSearchResult = (apiResult: any): DrugShortageSearchResult => ({
+  id: apiResult.id,
+  report_id: apiResult.id,
+  brand_name: apiResult.en_drug_brand_name,
+  company_name: apiResult.company?.name || 'Unknown Company',
+  active_ingredients: apiResult.en_ingredients,
+  strength: apiResult.strength || '',
+  dosage_form: apiResult.drug_dosage_form || '',
+  status: apiResult.status || 'Unknown',
+  updated_date: apiResult.last_updated_date || new Date().toISOString().split('T')[0],
+  type: apiResult.discontinuation_date ? 'discontinuation' : 'shortage'
+});
+
+// Transform API report to our application format
+const transformReport = (apiReport: any): DrugShortageReport => ({
+  id: apiReport.id,
+  report_id: apiReport.id,
+  brand_name: apiReport.en_drug_brand_name,
+  active_ingredients: apiReport.en_ingredients,
+  company_name: apiReport.company?.name || 'Unknown Company',
+  strength: apiReport.strength || '',
+  dosage_form: apiReport.drug_dosage_form || '',
+  discontinuation_date: apiReport.discontinuation_date,
+  anticipated_start_date: apiReport.anticipated_start_date,
+  actual_start_date: apiReport.actual_start_date,
+  estimated_end_date: apiReport.estimated_end_date,
+  actual_end_date: apiReport.actual_end_date,
+  status: apiReport.status || 'Unknown',
+  reason_for_shortage: apiReport.shortage_reason?.en_reason || 'Not specified',
+  comments: apiReport.en_comments || '',
+  tier_3: apiReport.tier_3 || false,
+  updated_date: apiReport.last_updated_date || new Date().toISOString().split('T')[0],
+  type: apiReport.discontinuation_date ? 'discontinuation' : 'shortage'
+});
+
 // Search for drug shortage reports
 export const searchDrugShortages = async (
   drugName: string
@@ -128,7 +171,9 @@ export const searchDrugShortages = async (
       throw new ApiError(errorData.error, errorData.missingCredentials);
     }
 
-    return (data as ApiResponse<DrugShortageSearchResult>).data;
+    // Transform the API response data
+    const apiResponse = data as ApiResponse<any>;
+    return apiResponse.data.map(transformSearchResult);
   } catch (error) {
     if (error instanceof ApiError) {
       throw error; // Rethrow our custom error
@@ -183,7 +228,8 @@ export const getDrugShortageReport = async (
       throw new ApiError(errorData.error, errorData.missingCredentials);
     }
 
-    return data as DrugShortageReport;
+    // Transform the API response
+    return transformReport(data);
   } catch (error) {
     if (error instanceof ApiError) {
       throw error; // Rethrow our custom error
