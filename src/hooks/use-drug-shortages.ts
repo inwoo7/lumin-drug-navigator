@@ -61,6 +61,7 @@ export const useDrugShortageSearch = (drugName: string) => {
     },
     enabled: drugName.length > 0,
     staleTime: 5 * 60 * 1000, // 5 minutes
+    cacheTime: 30 * 60 * 1000, // 30 minutes
     retry: 1, // Only retry once to avoid excessive API calls on failure
   });
 
@@ -121,6 +122,7 @@ export const useDrugShortageReport = (
     },
     enabled: !!reportId,
     staleTime: 10 * 60 * 1000, // 10 minutes
+    cacheTime: 30 * 60 * 1000, // 30 minutes - keep the data in cache longer
     retry: 1, // Only retry once to avoid excessive API calls on failure
   });
 
