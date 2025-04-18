@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -48,7 +47,7 @@ export const useOpenAIAssistant = ({
       
       try {
         // Use RPC function to load conversation since types don't include new tables
-        const { data, error } = await supabase.rpc<AIConversationResponse[], { p_session_id: string; p_assistant_type: string }>(
+        const { data, error } = await supabase.rpc(
           'get_ai_conversation', 
           { 
             p_session_id: sessionId, 

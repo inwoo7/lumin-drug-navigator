@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -45,7 +44,7 @@ const DocumentEditor = ({
       try {
         // Check if we have a document in the database
         // Use RPC function since types don't include our new tables yet
-        const { data, error } = await supabase.rpc<SessionDocumentResponse[], { p_session_id: string }>(
+        const { data, error } = await supabase.rpc(
           'get_session_document', 
           { p_session_id: sessionId }
         );
@@ -137,7 +136,7 @@ const DocumentEditor = ({
     
     try {
       // Use a custom RPC function to handle saving document
-      const { error } = await supabase.rpc<void, { p_session_id: string; p_content: string }>(
+      const { error } = await supabase.rpc(
         'save_session_document', 
         { 
           p_session_id: sessionId,

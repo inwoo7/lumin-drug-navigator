@@ -153,7 +153,37 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_session_document: {
+        Args: {
+          p_session_id: string
+        }
+        Returns: {
+          id: string
+          content: string
+        }[]
+      }
+      save_session_document: {
+        Args: {
+          p_session_id: string
+          p_content: string
+        }
+        Returns: void
+      }
+      get_ai_conversation: {
+        Args: {
+          p_session_id: string
+          p_assistant_type: string
+        }
+        Returns: {
+          thread_id: string
+          messages: {
+            id: string
+            role: "user" | "assistant"
+            content: string
+            timestamp: string
+          }[]
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
