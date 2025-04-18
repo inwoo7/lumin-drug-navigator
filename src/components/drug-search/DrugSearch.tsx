@@ -29,7 +29,7 @@ const DrugSearch = () => {
     setDrugs(filteredDrugs);
   }, [searchTerm]);
 
-  const handleSelectDrug = async (drug: Drug) => {
+  const handleSelectDrug = (drug: Drug) => {
     setOpen(false);
     setSearchTerm("");
     navigate(`/session`, { state: { drugName: drug.name } });

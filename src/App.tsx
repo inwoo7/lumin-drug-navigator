@@ -52,6 +52,7 @@ const InnerApp = () => {
       }>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
+        <Route path="session" element={<SessionPage />} />
         <Route path="session/:sessionId" element={<SessionPage />} />
         <Route path="history" element={<HistoryPage />} />
       </Route>
