@@ -20,10 +20,6 @@ type SessionDocumentResponse = {
   content: string;
 }
 
-// Add proper RPC types
-type GetSessionDocumentArgs = { p_session_id: string };
-type SaveSessionDocumentArgs = { p_session_id: string; p_content: string };
-
 const SessionPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const location = useLocation();
@@ -109,7 +105,7 @@ const SessionPage = () => {
       
       try {
         // Using RPC instead of direct table access
-        const { data, error } = await supabase.rpc<SessionDocumentResponse[], GetSessionDocumentArgs>('get_session_document', { 
+        const { data, error } = await supabase.rpc('get_session_document', { 
           p_session_id: sessionId 
         });
           
@@ -148,7 +144,7 @@ const SessionPage = () => {
   const saveDocument = async (content: string) => {
     try {
       // Using RPC instead of direct table access
-      const { error } = await supabase.rpc<null, SaveSessionDocumentArgs>('save_session_document', {
+      const { error } = await supabase.rpc('save_session_document', {
         p_session_id: sessionId,
         p_content: content
       });

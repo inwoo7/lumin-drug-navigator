@@ -34,9 +34,6 @@ type AIConversationResponse = {
   }[];
 }
 
-// Add proper RPC types
-type GetAIConversationArgs = { p_session_id: string; p_assistant_type: string };
-
 export const useOpenAIAssistant = ({
   assistantType,
   sessionId,
@@ -60,7 +57,7 @@ export const useOpenAIAssistant = ({
       
       try {
         // Use RPC function to load conversation
-        const { data, error } = await supabase.rpc<AIConversationResponse, GetAIConversationArgs>('get_ai_conversation', { 
+        const { data, error } = await supabase.rpc('get_ai_conversation', { 
           p_session_id: sessionId, 
           p_assistant_type: assistantType 
         });
