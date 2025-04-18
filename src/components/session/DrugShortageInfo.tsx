@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,9 +12,10 @@ import { Button } from "@/components/ui/button";
 type DrugShortageInfoProps = {
   drugName: string;
   isLoading?: boolean;
+  sessionId?: string;
 };
 
-const DrugShortageInfo = ({ drugName, isLoading: externalLoading }: DrugShortageInfoProps) => {
+const DrugShortageInfo = ({ drugName, isLoading: externalLoading, sessionId }: DrugShortageInfoProps) => {
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
   const [selectedReportType, setSelectedReportType] = useState<'shortage' | 'discontinuation'>('shortage');
   
@@ -21,7 +23,7 @@ const DrugShortageInfo = ({ drugName, isLoading: externalLoading }: DrugShortage
     shortages, 
     isLoading: isSearchLoading, 
     isError: isSearchError 
-  } = useDrugShortageSearch(drugName);
+  } = useDrugShortageSearch(drugName, sessionId);
   
   const { 
     report, 
@@ -29,7 +31,8 @@ const DrugShortageInfo = ({ drugName, isLoading: externalLoading }: DrugShortage
     isError: isReportError 
   } = useDrugShortageReport(
     selectedReport || undefined, 
-    selectedReportType
+    selectedReportType,
+    sessionId
   );
   
   if (shortages.length > 0 && !selectedReport && !isSearchLoading) {

@@ -12,14 +12,40 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Json } from "@/integrations/supabase/types";
 
-export const useDrugShortageSearch = (drugName: string) => {
+export const useDrugShortageSearch = (drugName: string, sessionId?: string) => {
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['drugShortages', drugName],
+    queryKey: ['drugShortages', drugName, sessionId],
     queryFn: async () => {
       if (!drugName) return [] as DrugShortageSearchResult[];
       
       try {
-        // First, check if we have results in Supabase
+        // If we have a sessionId, check if this session already has search results
+        if (sessionId) {
+          const { data: sessionData } = await supabase
+            .from('search_sessions')
+            .select('drug_name')
+            .eq('id', sessionId)
+            .single();
+          
+          if (sessionData && sessionData.drug_name) {
+            // This session exists, now get the cached search results
+            const { data: cachedSearch } = await supabase
+              .from('drug_shortage_searches')
+              .select('results')
+              .eq('search_term', sessionData.drug_name)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .single();
+
+            if (cachedSearch) {
+              console.log(`Using cached results for session ${sessionId}`);
+              // Type assertion to convert from Json to our expected type
+              return cachedSearch.results as unknown as DrugShortageSearchResult[];
+            }
+          }
+        }
+        
+        // Without a session or if session data not found, check by drug name
         const { data: cachedSearch } = await supabase
           .from('drug_shortage_searches')
           .select('results')
@@ -45,6 +71,16 @@ export const useDrugShortageSearch = (drugName: string) => {
             search_term: drugName,
             results: results as unknown as Json
           });
+        
+        // If we have a sessionId, create or update the session
+        if (sessionId) {
+          await supabase
+            .from('search_sessions')
+            .upsert({
+              id: sessionId,
+              drug_name: drugName
+            });
+        }
 
         return results;
       } catch (err: any) {
@@ -92,10 +128,11 @@ export const useDrugShortageSearch = (drugName: string) => {
 
 export const useDrugShortageReport = (
   reportId: string | undefined, 
-  type: 'shortage' | 'discontinuation' = 'shortage'
+  type: 'shortage' | 'discontinuation' = 'shortage',
+  sessionId?: string
 ) => {
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['drugShortageReport', reportId, type],
+    queryKey: ['drugShortageReport', reportId, type, sessionId],
     queryFn: async () => {
       if (!reportId) return null;
       
@@ -167,4 +204,61 @@ export const useDrugShortageReport = (
     isError,
     error
   };
+};
+
+// New hook to load sessions by ID
+export const useSession = (sessionId: string | undefined) => {
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ['session', sessionId],
+    queryFn: async () => {
+      if (!sessionId) return null;
+      
+      try {
+        const { data: sessionData, error } = await supabase
+          .from('search_sessions')
+          .select('*')
+          .eq('id', sessionId)
+          .single();
+          
+        if (error) throw error;
+        
+        if (sessionData) {
+          return sessionData;
+        }
+        
+        return null;
+      } catch (err) {
+        console.error('Error fetching session:', err);
+        throw err;
+      }
+    },
+    enabled: !!sessionId
+  });
+
+  return {
+    session: data,
+    isLoading,
+    isError,
+    error
+  };
+};
+
+// New function to create a session
+export const createSession = async (drugName: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('search_sessions')
+      .insert({
+        drug_name: drugName
+      })
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data;
+  } catch (err) {
+    console.error('Error creating session:', err);
+    toast.error('Failed to create session');
+    return null;
+  }
 };
