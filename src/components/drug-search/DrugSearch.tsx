@@ -102,26 +102,27 @@ const DrugSearch = () => {
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 200)}
         />
-        {open && searchTerm.length >= 3 && (
-          <CommandList className="max-h-[300px] overflow-y-auto">
-            <CommandEmpty>No drugs found.</CommandEmpty>
-            <CommandGroup heading="Drugs">
-              {drugs.map((drug) => (
-                <CommandItem
-                  key={drug.id}
-                  value={drug.name}
-                  onSelect={() => handleSelectDrug(drug)}
-                >
-                  {drug.name}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        )}
+        <CommandList className="max-h-[300px] overflow-y-auto">
+          {searchTerm.length >= 3 ? (
+            <>
+              <CommandEmpty>No drugs found.</CommandEmpty>
+              <CommandGroup heading="Drugs">
+                {drugs.map((drug) => (
+                  <CommandItem
+                    key={drug.id}
+                    value={drug.name}
+                    onSelect={() => handleSelectDrug(drug)}
+                  >
+                    {drug.name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </>
+          ) : null}
+        </CommandList>
       </Command>
     </div>
   );
 };
 
 export default DrugSearch;
-
