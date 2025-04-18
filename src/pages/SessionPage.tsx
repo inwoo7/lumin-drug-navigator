@@ -105,7 +105,7 @@ const SessionPage = () => {
       
       try {
         // Using RPC instead of direct table access
-        const { data, error } = await supabase.rpc<SessionDocumentResponse[]>(
+        const { data, error } = await supabase.rpc<SessionDocumentResponse[], { p_session_id: string }>(
           'get_session_document', 
           { p_session_id: sessionId }
         );
@@ -145,7 +145,7 @@ const SessionPage = () => {
   const saveDocument = async (content: string) => {
     try {
       // Using RPC instead of direct table access
-      const { error } = await supabase.rpc(
+      const { error } = await supabase.rpc<null, { p_session_id: string; p_content: string }>(
         'save_session_document', 
         {
           p_session_id: sessionId,

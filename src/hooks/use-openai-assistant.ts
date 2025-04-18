@@ -48,7 +48,7 @@ export const useOpenAIAssistant = ({
       
       try {
         // Use RPC function to load conversation since types don't include new tables
-        const { data, error } = await supabase.rpc<AIConversationResponse[]>(
+        const { data, error } = await supabase.rpc<AIConversationResponse[], { p_session_id: string; p_assistant_type: string }>(
           'get_ai_conversation', 
           { 
             p_session_id: sessionId, 
