@@ -10,6 +10,7 @@ import {
 } from "@/integrations/drugShortage/api";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { Json } from "@/integrations/supabase/types";
 
 export const useDrugShortageSearch = (drugName: string) => {
   const { data, isLoading, isError, error } = useQuery({
@@ -29,7 +30,8 @@ export const useDrugShortageSearch = (drugName: string) => {
 
         if (cachedSearch) {
           console.log(`Using cached results for "${drugName}"`);
-          return cachedSearch.results as DrugShortageSearchResult[];
+          // Type assertion to convert from Json to our expected type
+          return cachedSearch.results as unknown as DrugShortageSearchResult[];
         }
 
         console.log(`No cached results found for "${drugName}", fetching from API...`);
@@ -41,7 +43,7 @@ export const useDrugShortageSearch = (drugName: string) => {
           .from('drug_shortage_searches')
           .insert({
             search_term: drugName,
-            results: results
+            results: results as unknown as Json
           });
 
         return results;
@@ -108,7 +110,8 @@ export const useDrugShortageReport = (
 
         if (cachedReport) {
           console.log(`Using cached report for ID ${reportId}`);
-          return cachedReport.report_data as DrugShortageReport;
+          // Type assertion to convert from Json to our expected type
+          return cachedReport.report_data as unknown as DrugShortageReport;
         }
 
         console.log(`No cached report found for ID ${reportId}, fetching from API...`);
@@ -121,7 +124,7 @@ export const useDrugShortageReport = (
           .upsert({
             id: reportId,
             report_type: type,
-            report_data: report,
+            report_data: report as unknown as Json,
             updated_at: new Date().toISOString()
           });
 
