@@ -16,6 +16,17 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/components/auth/AuthProvider";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface SessionHistory {
   id: string;
@@ -28,6 +39,7 @@ const HistoryPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [sessions, setSessions] = useState<SessionHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
   const { user } = useAuth();
 
   useEffect(() => {
@@ -95,25 +107,38 @@ const HistoryPage = () => {
     });
   };
 
-  const handleDeleteSession = async (id: string, e: React.MouseEvent) => {
+  const handleDeleteClick = (id: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    setSessionToDelete(id);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!sessionToDelete) return;
     
     try {
       const { error } = await supabase
         .from('search_sessions')
         .delete()
-        .eq('id', id)
-        .eq('user_id', user?.id);
+        .eq('id', sessionToDelete);
 
-      if (error) throw error;
+      if (error) {
+        console.error("Error deleting session:", error);
+        throw error;
+      }
 
-      setSessions(sessions.filter(session => session.id !== id));
+      setSessions(sessions.filter(session => session.id !== sessionToDelete));
       toast.success("Session deleted successfully");
     } catch (error) {
       console.error("Error deleting session:", error);
       toast.error("Failed to delete session");
+    } finally {
+      setSessionToDelete(null);
     }
+  };
+
+  const handleDeleteCancel = () => {
+    setSessionToDelete(null);
   };
 
   return (
@@ -196,7 +221,7 @@ const HistoryPage = () => {
                           variant="ghost"
                           size="icon"
                           className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                          onClick={(e) => handleDeleteSession(session.id, e)}
+                          onClick={(e) => handleDeleteClick(session.id, e)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -213,6 +238,23 @@ const HistoryPage = () => {
           )}
         </CardContent>
       </Card>
+      
+      <AlertDialog open={!!sessionToDelete} onOpenChange={() => !sessionToDelete && setSessionToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this session and cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleDeleteCancel}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteConfirm} className="bg-red-500 hover:bg-red-600">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
