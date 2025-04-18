@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandList, CommandItem } from "@/components/ui/command";
@@ -42,21 +43,27 @@ const DrugSearch = () => {
         value={searchTerm}
         onValueChange={setSearchTerm}
         className="w-full"
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 200)}
       />
-      <CommandList className="absolute z-50 w-full min-w-[300px] max-h-[300px] overflow-y-auto bg-white border rounded-md shadow-lg">
-        <CommandEmpty>No drugs found.</CommandEmpty>
-        <CommandGroup>
-          {drugs.map((drug) => (
-            <CommandItem
-              key={drug.id}
-              value={drug.name}
-              onSelect={() => handleSelectDrug(drug)}
-            >
-              {drug.name}
-            </CommandItem>
-          ))}
-        </CommandGroup>
-      </CommandList>
+      {open && (
+        <div className="absolute z-50 w-full min-w-[300px] bg-white border rounded-md shadow-lg">
+          <CommandList className="max-h-[300px] overflow-y-auto">
+            <CommandEmpty>No drugs found.</CommandEmpty>
+            <CommandGroup>
+              {drugs.map((drug) => (
+                <CommandItem
+                  key={drug.id}
+                  value={drug.name}
+                  onSelect={() => handleSelectDrug(drug)}
+                >
+                  {drug.name}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </div>
+      )}
     </div>
   );
 };

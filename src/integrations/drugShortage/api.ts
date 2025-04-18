@@ -1,3 +1,4 @@
+
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -127,7 +128,7 @@ const transformReport = (apiReport: any): DrugShortageReport => ({
   brand_name: apiReport.en_drug_brand_name,
   active_ingredients: apiReport.en_ingredients,
   company_name: (apiReport.company && typeof apiReport.company === 'object') ? apiReport.company.name : 'Unknown Company',
-  strength: apiResult.strength || '',
+  strength: apiReport.strength || '',
   dosage_form: apiReport.drug_dosage_form || '',
   discontinuation_date: formatDate(apiReport.discontinuation_date),
   anticipated_start_date: formatDate(apiReport.anticipated_start_date),
