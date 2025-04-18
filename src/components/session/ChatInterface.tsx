@@ -59,7 +59,8 @@ const ChatInterface = ({
     drugShortageData: report || { drug_name: drugName },
     allShortageData: shortages?.length > 0 ? shortages : undefined,
     documentContent,
-    autoInitialize: true
+    autoInitialize: true,
+    onDocumentUpdate: sessionType === "document" ? onSendToDocument : undefined
   });
   
   // Add initial assistant message when chat first loads if not initialized
@@ -99,22 +100,14 @@ const ChatInterface = ({
       const message = inputMessage;
       setInputMessage("");
       // If this is a document assistant, try to update document with result
-      const response = await sendMessage(message);
-      
-      if (response && sessionType === "document" && onSendToDocument) {
-        onSendToDocument(response);
-      }
+      await sendMessage(message);
       return;
     }
     
     const message = inputMessage;
     setInputMessage("");
-    // If this is a document assistant, try to update document with result
-    const response = await sendMessage(message);
-    
-    if (response && sessionType === "document" && onSendToDocument) {
-      onSendToDocument(response);
-    }
+    // Send message - document updates are handled automatically via onDocumentUpdate callback
+    await sendMessage(message);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -124,6 +117,7 @@ const ChatInterface = ({
     }
   };
 
+  // This function is kept for backward compatibility but the automatic update is now preferred
   const handleSendToDoc = (content: string) => {
     if (onSendToDocument) {
       onSendToDocument(content);

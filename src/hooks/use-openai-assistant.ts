@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -18,6 +19,7 @@ type UseOpenAIAssistantProps = {
   allShortageData?: any[]; // All drug shortage data for comprehensive analysis
   documentContent?: string; // Current document content for document assistant
   autoInitialize?: boolean; // Whether to automatically initialize the assistant
+  onDocumentUpdate?: (content: string) => void; // Callback to update document
 };
 
 // Define the types for our custom RPC function responses
@@ -33,6 +35,7 @@ export const useOpenAIAssistant = ({
   allShortageData,
   documentContent,
   autoInitialize = false,
+  onDocumentUpdate,
 }: UseOpenAIAssistantProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -47,7 +50,7 @@ export const useOpenAIAssistant = ({
       
       try {
         // Use RPC function to load conversation since types don't include new tables
-        const { data, error } = await supabase.rpc(
+        const { data, error } = await supabase.rpc<AIConversationResponse, { p_session_id: string; p_assistant_type: string }>(
           'get_ai_conversation', 
           { 
             p_session_id: sessionId, 
@@ -99,9 +102,10 @@ export const useOpenAIAssistant = ({
                 assistantType,
                 messages: [],
                 drugData: drugShortageData,
-                allShortageData,
+                allShortageData: allShortageData || [], // Send all data regardless
                 documentContent,
                 sessionId,
+                generateDocument: assistantType === "document", // Flag to generate document
               },
             });
             
@@ -123,20 +127,37 @@ export const useOpenAIAssistant = ({
             setThreadId(data.threadId);
             
             if (data.messages && data.messages.length > 0) {
-              setMessages(data.messages.map((msg: any) => ({
+              const formattedMessages = data.messages.map((msg: any) => ({
                 id: msg.id,
                 role: msg.role,
                 content: msg.content,
                 timestamp: new Date(msg.timestamp)
-              })));
+              }));
+              
+              setMessages(formattedMessages);
+              
+              // If this is a document assistant, update document with the first response
+              if (assistantType === "document" && onDocumentUpdate && formattedMessages.length > 0) {
+                const assistantMessages = formattedMessages.filter(msg => msg.role === "assistant");
+                if (assistantMessages.length > 0) {
+                  onDocumentUpdate(assistantMessages[0].content);
+                }
+              }
             } else {
               // Fallback if we don't get messages back
-              setMessages([{
+              const initialMessage = {
                 id: Date.now().toString(),
                 role: "assistant",
                 content: data.message,
                 timestamp: new Date(),
-              }]);
+              };
+              
+              setMessages([initialMessage]);
+              
+              // If this is a document assistant, update document
+              if (assistantType === "document" && onDocumentUpdate) {
+                onDocumentUpdate(data.message);
+              }
             }
             
             setIsInitialized(true);
@@ -162,7 +183,8 @@ export const useOpenAIAssistant = ({
     isLoading, 
     drugShortageData, 
     allShortageData, 
-    documentContent
+    documentContent,
+    onDocumentUpdate
   ]);
 
   // Function to add a message to the local state
@@ -199,7 +221,7 @@ export const useOpenAIAssistant = ({
           assistantType,
           messages: messagesForAPI,
           drugData: drugShortageData,
-          allShortageData,
+          allShortageData: allShortageData || [], // Send all data regardless
           documentContent,
           sessionId,
           threadId, // Include thread ID for continuing the conversation
@@ -228,7 +250,12 @@ export const useOpenAIAssistant = ({
       // Add the assistant's response to the chat
       addMessage("assistant", data.message);
       
-      // If this is for document content, return the response for potential document updates
+      // If this is for document content, update document automatically
+      if (assistantType === "document" && onDocumentUpdate) {
+        onDocumentUpdate(data.message);
+      }
+      
+      // Return the response for potential document updates
       return data.message;
       
     } catch (err: any) {
