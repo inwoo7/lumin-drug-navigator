@@ -9,6 +9,51 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      drug_shortage_reports: {
+        Row: {
+          created_at: string
+          id: string
+          report_data: Json
+          report_type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id: string
+          report_data: Json
+          report_type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          report_data?: Json
+          report_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      drug_shortage_searches: {
+        Row: {
+          created_at: string
+          id: string
+          results: Json
+          search_term: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          results: Json
+          search_term: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          results?: Json
+          search_term?: string
+        }
+        Relationships: []
+      }
       search_sessions: {
         Row: {
           created_at: string

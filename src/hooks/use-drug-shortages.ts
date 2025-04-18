@@ -9,6 +9,7 @@ import {
   DrugShortageReport
 } from "@/integrations/drugShortage/api";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 export const useDrugShortageSearch = (drugName: string) => {
   const { data, isLoading, isError, error } = useQuery({
@@ -17,10 +18,32 @@ export const useDrugShortageSearch = (drugName: string) => {
       if (!drugName) return [] as DrugShortageSearchResult[];
       
       try {
-        console.log(`Searching for drug shortages: "${drugName}"`);
-        // Use Edge Function to access the API
+        // First, check if we have results in Supabase
+        const { data: cachedSearch } = await supabase
+          .from('drug_shortage_searches')
+          .select('results')
+          .eq('search_term', drugName)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (cachedSearch) {
+          console.log(`Using cached results for "${drugName}"`);
+          return cachedSearch.results as DrugShortageSearchResult[];
+        }
+
+        console.log(`No cached results found for "${drugName}", fetching from API...`);
+        // If not in cache, fetch from API
         const results = await searchDrugShortages(drugName);
-        console.log(`Found ${results.length} shortages for "${drugName}"`);
+        
+        // Store the results in Supabase
+        await supabase
+          .from('drug_shortage_searches')
+          .insert({
+            search_term: drugName,
+            results: results
+          });
+
         return results;
       } catch (err: any) {
         console.error('Error searching drug shortages:', err);
@@ -35,7 +58,6 @@ export const useDrugShortageSearch = (drugName: string) => {
             duration: 5000
           });
         } else if (err.message && err.message.includes('404')) {
-          // Special handling for 404 errors which likely indicate API endpoint changes
           toast.error("The Drug Shortages Canada API may have changed. Using mock data.", {
             id: errorId,
             duration: 5000
@@ -47,22 +69,15 @@ export const useDrugShortageSearch = (drugName: string) => {
           });
         }
         
-        // Log that we're falling back to mock data
-        console.log(`Falling back to mock data for "${drugName}"`);
-        
         // Fall back to mock data on error
         const mockData = await mockSearchDrugShortages(drugName);
-        
-        // Log the mock data we're using
-        console.log(`Using mock data with ${mockData.length} results`);
-        
         return mockData;
       }
     },
     enabled: drugName.length > 0,
     staleTime: 5 * 60 * 1000, // 5 minutes
-    cacheTime: 30 * 60 * 1000, // 30 minutes
-    retry: 1, // Only retry once to avoid excessive API calls on failure
+    gcTime: 30 * 60 * 1000, // 30 minutes
+    retry: 1
   });
 
   return {
@@ -83,25 +98,45 @@ export const useDrugShortageReport = (
       if (!reportId) return null;
       
       try {
-        console.log(`Fetching ${type} report: ${reportId}`);
-        // Use Edge Function to access the API
+        // First, check if we have the report in Supabase
+        const { data: cachedReport } = await supabase
+          .from('drug_shortage_reports')
+          .select('report_data')
+          .eq('id', reportId)
+          .eq('report_type', type)
+          .single();
+
+        if (cachedReport) {
+          console.log(`Using cached report for ID ${reportId}`);
+          return cachedReport.report_data as DrugShortageReport;
+        }
+
+        console.log(`No cached report found for ID ${reportId}, fetching from API...`);
+        // If not in cache, fetch from API
         const report = await getDrugShortageReport(reportId, type);
-        console.log(`Successfully retrieved ${type} report for ID ${reportId}`);
+        
+        // Store the report in Supabase
+        await supabase
+          .from('drug_shortage_reports')
+          .upsert({
+            id: reportId,
+            report_type: type,
+            report_data: report,
+            updated_at: new Date().toISOString()
+          });
+
         return report;
       } catch (err: any) {
         console.error('Error fetching drug shortage report:', err);
         
-        // Create a unique ID for this error to prevent duplicate toasts
         const errorId = `report-error-${reportId}`;
         
-        // Check if the error is due to missing credentials
         if (err.missingCredentials) {
           toast.error("API credentials not configured. Using mock data.", {
             id: "missing-credentials",
             duration: 5000
           });
         } else if (err.message && err.message.includes('404')) {
-          // Special handling for 404 errors which likely indicate API endpoint changes
           toast.error("The Drug Shortages Canada API may have changed. Using mock data.", {
             id: errorId,
             duration: 5000
@@ -113,17 +148,14 @@ export const useDrugShortageReport = (
           });
         }
         
-        // Log that we're falling back to mock data
-        console.log(`Using mock data for report ${reportId}`);
-        
-        // Fall back to mock data on error
+        // Fall back to mock data
         return await mockGetDrugShortageReport(reportId, type);
       }
     },
     enabled: !!reportId,
     staleTime: 10 * 60 * 1000, // 10 minutes
-    cacheTime: 30 * 60 * 1000, // 30 minutes - keep the data in cache longer
-    retry: 1, // Only retry once to avoid excessive API calls on failure
+    gcTime: 30 * 60 * 1000, // 30 minutes
+    retry: 1
   });
 
   return {
