@@ -14,10 +14,13 @@ import { toast } from "sonner";
 import { useSession, createSession } from "@/hooks/use-drug-shortages";
 import { supabase } from "@/integrations/supabase/client";
 
-// Define the type for our custom RPC function response
-type SessionDocumentResponse = {
+// Define the type for our session document
+interface SessionDocument {
   id: string;
   content: string;
+  session_id: string;
+  created_at: string;
+  updated_at: string;
 }
 
 const SessionPage = () => {
@@ -110,13 +113,11 @@ const SessionPage = () => {
         });
           
         if (error) {
-          if (error.code !== 'PGRST116') { // PGRST116 is the "not found" error
-            console.error("Error loading document:", error);
-          }
+          console.error("Error loading document:", error);
           return;
         }
         
-        if (data && Array.isArray(data) && data.length > 0 && data[0].content) {
+        if (data && Array.isArray(data) && data.length > 0 && data[0]?.content) {
           setDocumentContent(data[0].content);
         }
       } catch (err) {

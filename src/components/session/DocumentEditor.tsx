@@ -15,10 +15,13 @@ interface DocumentEditorProps {
   initialContent?: string;
 }
 
-// Define the type for our custom RPC function response
-type SessionDocumentResponse = {
+// Define the type for our session document
+interface SessionDocument {
   id: string;
   content: string;
+  session_id: string;
+  created_at: string;
+  updated_at: string;
 }
 
 const DocumentEditor = ({ 
@@ -49,16 +52,14 @@ const DocumentEditor = ({
         });
           
         if (error) {
-          if (error.code !== 'PGRST116') { // PGRST116 is the "not found" error
-            console.error("Error loading document:", error);
-          }
-          // Use initial content or template if no document found
+          console.error("Error loading document:", error);
+          // Use initial content or template if error occurs
           if (initialContent) {
             setContent(initialContent);
           } else {
             initializeWithTemplate();
           }
-        } else if (data && Array.isArray(data) && data.length > 0 && data[0].content) {
+        } else if (data && Array.isArray(data) && data.length > 0 && data[0]?.content) {
           setContent(data[0].content);
         } else if (initialContent) {
           setContent(initialContent);

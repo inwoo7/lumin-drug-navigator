@@ -23,15 +23,20 @@ type UseOpenAIAssistantProps = {
   generateDocument?: boolean; // Flag to generate document on initialization
 };
 
-// Define the types for our custom RPC function responses
-type AIConversationResponse = {
+// Define the type for conversation in the database
+interface AIConversation {
+  id: string;
   thread_id: string;
+  assistant_type: string;
+  session_id: string;
   messages: {
     id: string;
     role: string;
     content: string;
     timestamp: string;
   }[];
+  created_at: string;
+  updated_at: string;
 }
 
 export const useOpenAIAssistant = ({
@@ -63,26 +68,26 @@ export const useOpenAIAssistant = ({
         });
           
         if (error) {
-          if (error.code !== 'PGRST116') { // PGRST116 is the "not found" error
-            console.error("Error loading conversation:", error);
-          }
+          console.error("Error loading conversation:", error);
           return;
         }
         
         if (data && Array.isArray(data) && data.length > 0) {
-          const conversationData = data[0];
+          const conversationData = data[0] as AIConversation;
           setThreadId(conversationData.thread_id);
           
           // Convert the stored messages to our format
-          const storedMessages = conversationData.messages.map((msg) => ({
-            id: msg.id,
-            role: msg.role as "user" | "assistant",
-            content: msg.content,
-            timestamp: new Date(msg.timestamp)
-          }));
-          
-          setMessages(storedMessages);
-          setIsInitialized(true);
+          if (conversationData.messages && Array.isArray(conversationData.messages)) {
+            const storedMessages = conversationData.messages.map((msg) => ({
+              id: msg.id,
+              role: msg.role as "user" | "assistant",
+              content: msg.content,
+              timestamp: new Date(msg.timestamp)
+            }));
+            
+            setMessages(storedMessages);
+            setIsInitialized(true);
+          }
         }
       } catch (err) {
         console.error("Error loading conversation:", err);
@@ -258,6 +263,27 @@ export const useOpenAIAssistant = ({
       // If this is for document content, update document automatically
       if (assistantType === "document" && onDocumentUpdate) {
         onDocumentUpdate(data.message);
+      }
+      
+      // Save the conversation to the database if we have a session ID
+      if (sessionId && data.threadId) {
+        try {
+          await supabase.rpc('save_ai_conversation', {
+            p_session_id: sessionId,
+            p_assistant_type: assistantType,
+            p_thread_id: data.threadId,
+            p_messages: JSON.stringify(
+              [...messages, { 
+                id: Date.now().toString(),
+                role: "assistant",
+                content: data.message,
+                timestamp: new Date().toISOString() 
+              }]
+            )
+          });
+        } catch (saveErr) {
+          console.error("Error saving conversation:", saveErr);
+        }
       }
       
       // Return the response for potential document updates
