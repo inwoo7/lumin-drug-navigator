@@ -51,6 +51,7 @@ serve(async (req) => {
 
     console.log(`Received request for ${assistantType} assistant`);
     console.log(`Thread ID: ${threadId || 'new thread'}`);
+    console.log(`Generate Document: ${generateDocument}`);
     
     // Select the appropriate assistant ID
     const assistantId = assistantType === "shortage" 
@@ -86,14 +87,14 @@ serve(async (req) => {
       
       if (assistantType === "shortage") {
         // Provide complete drug shortage data to the LLM
-        initialPrompt = `You are analyzing drug shortage data for ${drugData?.drug_name || "the requested drug"}. `;
+        initialPrompt = `You are analyzing drug shortage data for ${drugData?.brand_name || drugData?.drug_name || "the requested drug"}. `;
         
         if (drugData) {
-          initialPrompt += `This is the specific report data: ${JSON.stringify(drugData, null, 2)}. `;
+          initialPrompt += `This is the specific report data in full raw JSON format: ${JSON.stringify(drugData, null, 2)}. `;
         }
         
         if (allShortageData && allShortageData.length > 0) {
-          initialPrompt += `Here is comprehensive data about all related shortages: ${JSON.stringify(allShortageData, null, 2)}. `;
+          initialPrompt += `Here is comprehensive data about all related shortages in full raw JSON format: ${JSON.stringify(allShortageData, null, 2)}. `;
         }
         
         initialPrompt += `Please provide a detailed analysis of the shortage situation, including therapeutic alternatives, conservation strategies, patient prioritization, and other relevant information.`;
@@ -101,17 +102,17 @@ serve(async (req) => {
         initialPrompt = `You are helping create a concise document about a drug shortage. `;
         
         if (drugData) {
-          initialPrompt += `This is the specific drug data: ${JSON.stringify(drugData, null, 2)}. `;
+          initialPrompt += `This is the specific drug data in full raw JSON format: ${JSON.stringify(drugData, null, 2)}. `;
         }
         
         if (allShortageData && allShortageData.length > 0) {
-          initialPrompt += `Here is comprehensive data about all related shortages: ${JSON.stringify(allShortageData, null, 2)}. `;
+          initialPrompt += `Here is comprehensive data about all related shortages in full raw JSON format: ${JSON.stringify(allShortageData, null, 2)}. `;
         }
         
         if (documentContent) {
           initialPrompt += `Here is the current document content that you should use as a base: "${documentContent}". `;
         } else if (generateDocument) {
-          initialPrompt += `Please generate a complete initial shortage management plan document. `;
+          initialPrompt += `Please generate a complete initial markdown-formatted shortage management plan document based on the data provided. Include all relevant sections such as overview, therapeutic alternatives, conservation strategies, patient prioritization, implementation plan, communication strategy, and resources. `;
         } else {
           initialPrompt += `Please generate an initial draft for a hospital staff communication document. `;
         }
@@ -159,7 +160,7 @@ serve(async (req) => {
     if (assistantType === "shortage") {
       instructions = `You are analyzing drug shortage data. `;
       if (drugData) {
-        instructions += `Provide detailed insights about ${drugData.drug_name || "this drug"} shortage, therapeutic alternatives, conservation strategies, and other relevant information.`;
+        instructions += `Provide detailed insights about ${drugData.brand_name || drugData.drug_name || "this drug"} shortage, therapeutic alternatives, conservation strategies, and other relevant information.`;
       }
     } else {
       instructions = `You are helping create a concise document about a drug shortage. `;
@@ -171,7 +172,11 @@ serve(async (req) => {
         instructions += `Generate a complete initial shortage management plan document in markdown format with clear sections. `;
       }
       
-      instructions += `Focus on key information that hospital staff need to know, such as shortage duration, alternatives, and conservation strategies.`;
+      if (messages && messages.length > 0 && messages[0].content.includes("remove") || messages[0].content.includes("edit") || messages[0].content.includes("update")) {
+        instructions += `The user is asking you to modify the document content directly. Make the requested changes and return the complete updated document (not just the changes).`;
+      } else {
+        instructions += `Focus on key information that hospital staff need to know, such as shortage duration, alternatives, and conservation strategies.`;
+      }
     }
     
     // Run the assistant - Updated for v2 API
@@ -286,8 +291,8 @@ serve(async (req) => {
               p_messages: allMessages
             });
           
-          // If this is the document assistant, update the document content
-          if (assistantType === "document" && (generateDocument || messages.length > 0)) {
+          // If this is the document assistant and we have generated a document or the user is editing it, update the document content
+          if (assistantType === "document" && (generateDocument || (messages && messages.length > 0))) {
             await supabase
               .rpc('save_session_document', {
                 p_session_id: sessionId,

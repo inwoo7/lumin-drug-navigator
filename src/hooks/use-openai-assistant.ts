@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -19,6 +20,7 @@ type UseOpenAIAssistantProps = {
   documentContent?: string; // Current document content for document assistant
   autoInitialize?: boolean; // Whether to automatically initialize the assistant
   onDocumentUpdate?: (content: string) => void; // Callback to update document
+  generateDocument?: boolean; // Flag to generate document on initialization
 };
 
 // Define the types for our custom RPC function responses
@@ -26,7 +28,7 @@ type AIConversationResponse = {
   thread_id: string;
   messages: {
     id: string;
-    role: "user" | "assistant";
+    role: string;
     content: string;
     timestamp: string;
   }[];
@@ -43,6 +45,7 @@ export const useOpenAIAssistant = ({
   documentContent,
   autoInitialize = false,
   onDocumentUpdate,
+  generateDocument = false,
 }: UseOpenAIAssistantProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -57,7 +60,7 @@ export const useOpenAIAssistant = ({
       
       try {
         // Use RPC function to load conversation
-        const { data, error } = await supabase.rpc('get_ai_conversation', { 
+        const { data, error } = await supabase.rpc<AIConversationResponse, GetAIConversationArgs>('get_ai_conversation', { 
           p_session_id: sessionId, 
           p_assistant_type: assistantType 
         });
@@ -76,7 +79,7 @@ export const useOpenAIAssistant = ({
           // Convert the stored messages to our format
           const storedMessages = conversationData.messages.map((msg) => ({
             id: msg.id,
-            role: msg.role,
+            role: msg.role as "user" | "assistant",
             content: msg.content,
             timestamp: new Date(msg.timestamp)
           }));
@@ -109,7 +112,7 @@ export const useOpenAIAssistant = ({
                 allShortageData: allShortageData || [], // Send all data regardless
                 documentContent,
                 sessionId,
-                generateDocument: assistantType === "document", // Flag to generate document
+                generateDocument: generateDocument || assistantType === "document", // Flag to generate document
               },
             });
             
@@ -188,7 +191,8 @@ export const useOpenAIAssistant = ({
     drugShortageData, 
     allShortageData, 
     documentContent,
-    onDocumentUpdate
+    onDocumentUpdate,
+    generateDocument
   ]);
 
   // Function to add a message to the local state
