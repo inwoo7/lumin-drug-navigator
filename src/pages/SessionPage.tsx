@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -105,7 +104,7 @@ const SessionPage = () => {
       
       try {
         // Using RPC instead of direct table access
-        const { data, error } = await supabase.rpc(
+        const { data, error } = await supabase.rpc<SessionDocumentResponse[]>(
           'get_session_document', 
           { p_session_id: sessionId }
         );
@@ -117,8 +116,8 @@ const SessionPage = () => {
           return;
         }
         
-        if (data && Array.isArray(data) && data.length > 0 && (data[0] as SessionDocumentResponse).content) {
-          setDocumentContent((data[0] as SessionDocumentResponse).content);
+        if (data && Array.isArray(data) && data.length > 0 && data[0].content) {
+          setDocumentContent(data[0].content);
         }
       } catch (err) {
         console.error("Error loading document:", err);
@@ -145,7 +144,7 @@ const SessionPage = () => {
   const saveDocument = async (content: string) => {
     try {
       // Using RPC instead of direct table access
-      const { error } = await supabase.rpc(
+      const { error } = await supabase.rpc<void>(
         'save_session_document', 
         {
           p_session_id: sessionId,
