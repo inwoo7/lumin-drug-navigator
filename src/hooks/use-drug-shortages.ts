@@ -11,8 +11,11 @@ import {
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Json } from "@/integrations/supabase/types";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 export const useDrugShortageSearch = (drugName: string, sessionId?: string) => {
+  const { user } = useAuth();
+  
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['drugShortages', drugName, sessionId],
     queryFn: async () => {
@@ -78,7 +81,8 @@ export const useDrugShortageSearch = (drugName: string, sessionId?: string) => {
             .from('search_sessions')
             .upsert({
               id: sessionId,
-              drug_name: drugName
+              drug_name: drugName,
+              user_id: user?.id
             });
         }
 
@@ -246,10 +250,13 @@ export const useSession = (sessionId: string | undefined) => {
 // New function to create a session
 export const createSession = async (drugName: string) => {
   try {
+    const { user } = await supabase.auth.getUser();
+    
     const { data, error } = await supabase
       .from('search_sessions')
       .insert({
-        drug_name: drugName
+        drug_name: drugName,
+        user_id: user?.id || null
       })
       .select()
       .single();

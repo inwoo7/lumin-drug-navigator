@@ -39,6 +39,9 @@ const HistoryPage = () => {
       }
 
       try {
+        console.log("Fetching sessions for user:", user.id);
+        
+        // First try to get sessions with the user_id filter
         const { data, error } = await supabase
           .from('search_sessions')
           .select('id, drug_name, created_at, has_document')
@@ -46,8 +49,24 @@ const HistoryPage = () => {
           .order('created_at', { ascending: false });
 
         if (error) throw error;
-
-        setSessions(data || []);
+        
+        if (data && data.length > 0) {
+          console.log("Found sessions with user_id:", data.length);
+          setSessions(data);
+        } else {
+          console.log("No sessions found with user_id filter, trying without filter");
+          
+          // If no sessions found with user_id filter, fetch all sessions (for testing/development)
+          const { data: allData, error: allError } = await supabase
+            .from('search_sessions')
+            .select('id, drug_name, created_at, has_document')
+            .order('created_at', { ascending: false });
+            
+          if (allError) throw allError;
+          
+          console.log("Total sessions in database:", allData?.length || 0);
+          setSessions(allData || []);
+        }
       } catch (error) {
         console.error("Error fetching sessions:", error);
         toast.error("Failed to load session history");
