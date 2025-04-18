@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
 interface SessionHistory {
@@ -115,21 +115,13 @@ const HistoryPage = () => {
     try {
       console.log("Attempting to delete session with ID:", sessionToDelete);
       
-      const { data: sessionData, error: sessionError } = await supabase
-        .from('search_sessions')
-        .select('*')
-        .eq('id', sessionToDelete)
-        .single();
+      // Optimistically update UI first (remove from local state)
+      setSessions(prevSessions => 
+        prevSessions.filter(session => session.id !== sessionToDelete)
+      );
       
-      if (sessionError) {
-        console.error("Error finding session before deletion:", sessionError);
-        toast.error(`Cannot find session: ${sessionError.message}`);
-        return;
-      }
-
-      console.log("Session found before deletion:", sessionData);
-      
-      const { data, error } = await supabase
+      // Then attempt the actual database deletion
+      const { error } = await supabase
         .from('search_sessions')
         .delete()
         .eq('id', sessionToDelete);
@@ -137,17 +129,22 @@ const HistoryPage = () => {
       if (error) {
         console.error("Database deletion error:", error);
         toast.error(`Failed to delete session: ${error.message}`);
+        
+        // If deletion failed, reload the sessions to restore accurate state
+        await fetchSessions();
         return;
       }
 
-      console.log("Delete operation successful. Rows affected:", data);
-      
-      await fetchSessions();
-      
+      console.log("Delete operation successful");
       toast.success("Session deleted successfully");
+      
+      // No need to call fetchSessions() again since we already updated the UI optimistically
     } catch (error) {
       console.error("Unexpected error during session deletion:", error);
       toast.error("An unexpected error occurred while deleting the session");
+      
+      // If an exception occurred, reload the sessions to restore accurate state
+      await fetchSessions();
     } finally {
       setSessionToDelete(null);
     }
