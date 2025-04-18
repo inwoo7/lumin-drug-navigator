@@ -7,56 +7,45 @@ import { AlertTriangle, Clock, Calendar, ExternalLink, Loader2 } from "lucide-re
 import { useDrugShortageSearch, useDrugShortageReport } from "@/hooks/use-drug-shortages";
 import { DrugShortageReport, DrugShortageSearchResult } from "@/integrations/drugShortage/api";
 import { Button } from "@/components/ui/button";
-
 type DrugShortageInfoProps = {
   drugName: string;
   isLoading?: boolean;
   sessionId?: string;
 };
-
-const DrugShortageInfo = ({ drugName, isLoading: externalLoading, sessionId }: DrugShortageInfoProps) => {
+const DrugShortageInfo = ({
+  drugName,
+  isLoading: externalLoading,
+  sessionId
+}: DrugShortageInfoProps) => {
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
   const [selectedReportType, setSelectedReportType] = useState<'shortage' | 'discontinuation'>('shortage');
-  
-  const { 
-    shortages, 
-    isLoading: isSearchLoading, 
-    isError: isSearchError 
+  const {
+    shortages,
+    isLoading: isSearchLoading,
+    isError: isSearchError
   } = useDrugShortageSearch(drugName, sessionId);
-  
-  const { 
-    report, 
-    isLoading: isReportLoading, 
-    isError: isReportError 
-  } = useDrugShortageReport(
-    selectedReport || undefined, 
-    selectedReportType,
-    sessionId
-  );
-  
+  const {
+    report,
+    isLoading: isReportLoading,
+    isError: isReportError
+  } = useDrugShortageReport(selectedReport || undefined, selectedReportType, sessionId);
   if (shortages.length > 0 && !selectedReport && !isSearchLoading) {
     setSelectedReport(shortages[0].id);
     setSelectedReportType(shortages[0].type);
   }
-
   const isLoading = externalLoading || isSearchLoading;
-
   if (isLoading) {
-    return (
-      <Card className="h-full">
+    return <Card className="h-full">
         <CardContent className="h-full flex items-center justify-center p-6">
           <div className="text-center space-y-4">
             <Loader2 className="h-8 w-8 animate-spin mx-auto text-lumin-teal" />
             <p className="text-gray-500">Retrieving shortage information for {drugName}...</p>
           </div>
         </CardContent>
-      </Card>
-    );
+      </Card>;
   }
-
   if (isSearchError) {
-    return (
-      <Card className="h-full">
+    return <Card className="h-full">
         <CardContent className="p-6">
           <div className="text-center space-y-2">
             <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto" />
@@ -64,22 +53,15 @@ const DrugShortageInfo = ({ drugName, isLoading: externalLoading, sessionId }: D
             <p className="text-sm text-gray-500">
               We couldn't retrieve shortage information for {drugName}.
             </p>
-            <Button 
-              variant="outline" 
-              onClick={() => window.location.reload()}
-              className="mt-4"
-            >
+            <Button variant="outline" onClick={() => window.location.reload()} className="mt-4">
               Try Again
             </Button>
           </div>
         </CardContent>
-      </Card>
-    );
+      </Card>;
   }
-  
   if (shortages.length === 0) {
-    return (
-      <Card className="h-full">
+    return <Card className="h-full">
         <CardHeader>
           <CardTitle>No Shortages Found</CardTitle>
           <CardDescription>No current shortage reports for {drugName}</CardDescription>
@@ -96,29 +78,20 @@ const DrugShortageInfo = ({ drugName, isLoading: externalLoading, sessionId }: D
             </div>
           </div>
         </CardContent>
-      </Card>
-    );
+      </Card>;
   }
-
-  const ReportSelector = () => (
-    shortages.length > 1 ? (
-      <div className="mb-4">
+  const ReportSelector = () => shortages.length > 1 ? <div className="mb-4">
         <h4 className="text-sm font-medium mb-2">Select Report:</h4>
         <div className="grid grid-cols-1 gap-2 max-h-[200px] overflow-y-auto">
-          {shortages.map((shortage) => (
-            <Card 
-              key={shortage.id}
-              className={`cursor-pointer border ${selectedReport === shortage.id ? 'border-lumin-teal bg-lumin-teal/5' : 'border-gray-200'}`}
-              onClick={() => {
-                setSelectedReport(shortage.id);
-                setSelectedReportType(shortage.type);
-              }}
-            >
+          {shortages.map(shortage => <Card key={shortage.id} className={`cursor-pointer border ${selectedReport === shortage.id ? 'border-lumin-teal bg-lumin-teal/5' : 'border-gray-200'}`} onClick={() => {
+        setSelectedReport(shortage.id);
+        setSelectedReportType(shortage.type);
+      }}>
               <CardContent className="p-3">
                 <div className="flex justify-between items-start">
                   <div className="text-sm">
                     <div className="font-medium">{shortage.brand_name}</div>
-                    <div className="text-xs text-gray-500">{shortage.company_name}</div>
+                    
                     <div className="text-xs text-gray-500">{shortage.report_id}</div>
                   </div>
                   <Badge variant={shortage.status === "Active" ? "destructive" : "outline"}>
@@ -126,16 +99,11 @@ const DrugShortageInfo = ({ drugName, isLoading: externalLoading, sessionId }: D
                   </Badge>
                 </div>
               </CardContent>
-            </Card>
-          ))}
+            </Card>)}
         </div>
-      </div>
-    ) : null
-  );
-  
+      </div> : null;
   if (isReportLoading || !report) {
-    return (
-      <Card className="h-full">
+    return <Card className="h-full">
         <CardHeader>
           <CardTitle className="text-xl">{drugName}</CardTitle>
           <CardDescription>Loading report details...</CardDescription>
@@ -146,10 +114,8 @@ const DrugShortageInfo = ({ drugName, isLoading: externalLoading, sessionId }: D
             <Loader2 className="h-8 w-8 animate-spin text-lumin-teal" />
           </div>
         </CardContent>
-      </Card>
-    );
+      </Card>;
   }
-
   const getImpactColor = (status: string) => {
     const statusLower = status.toLowerCase();
     if (statusLower.includes('discontinued') || statusLower.includes('active')) {
@@ -162,9 +128,7 @@ const DrugShortageInfo = ({ drugName, isLoading: externalLoading, sessionId }: D
       return "bg-gray-500";
     }
   };
-
-  return (
-    <Card className="h-full">
+  return <Card className="h-full">
       <CardHeader>
         <div className="flex justify-between items-start">
           <div>
@@ -173,10 +137,7 @@ const DrugShortageInfo = ({ drugName, isLoading: externalLoading, sessionId }: D
               <Clock className="h-3.5 w-3.5 mr-1" /> Updated on {new Date(report.updated_date).toLocaleDateString()}
             </CardDescription>
           </div>
-          <Badge 
-            variant={report.status.toLowerCase().includes('active') ? "destructive" : "outline"}
-            className="ml-2"
-          >
+          <Badge variant={report.status.toLowerCase().includes('active') ? "destructive" : "outline"} className="ml-2">
             {report.status}
           </Badge>
         </div>
@@ -237,10 +198,7 @@ const DrugShortageInfo = ({ drugName, isLoading: externalLoading, sessionId }: D
                 <div>
                   <h4 className="text-sm font-semibold text-amber-800">Shortage Alert</h4>
                   <p className="text-sm text-amber-700">
-                    {report.status.toLowerCase().includes('active') 
-                      ? 'This is an active shortage situation. Please review alternative options carefully.'
-                      : `Current status: ${report.status}`
-                    }
+                    {report.status.toLowerCase().includes('active') ? 'This is an active shortage situation. Please review alternative options carefully.' : `Current status: ${report.status}`}
                   </p>
                 </div>
               </div>
@@ -249,64 +207,45 @@ const DrugShortageInfo = ({ drugName, isLoading: externalLoading, sessionId }: D
             <div>
               <h4 className="text-sm font-medium">Timeline</h4>
               <div className="mt-2 space-y-2 text-sm">
-                {report.anticipated_start_date && (
-                  <div className="flex">
+                {report.anticipated_start_date && <div className="flex">
                     <span className="w-32 text-gray-500">Anticipated Start:</span>
                     <span>{report.anticipated_start_date}</span>
-                  </div>
-                )}
-                {report.actual_start_date && (
-                  <div className="flex">
+                  </div>}
+                {report.actual_start_date && <div className="flex">
                     <span className="w-32 text-gray-500">Actual Start:</span>
                     <span>{report.actual_start_date}</span>
-                  </div>
-                )}
-                {report.estimated_end_date && (
-                  <div className="flex">
+                  </div>}
+                {report.estimated_end_date && <div className="flex">
                     <span className="w-32 text-gray-500">Estimated End:</span>
                     <span>{report.estimated_end_date}</span>
-                  </div>
-                )}
-                {report.actual_end_date && (
-                  <div className="flex">
+                  </div>}
+                {report.actual_end_date && <div className="flex">
                     <span className="w-32 text-gray-500">Actual End:</span>
                     <span>{report.actual_end_date}</span>
-                  </div>
-                )}
-                {report.discontinuation_date && (
-                  <div className="flex">
+                  </div>}
+                {report.discontinuation_date && <div className="flex">
                     <span className="w-32 text-gray-500">Discontinuation:</span>
                     <span>{report.discontinuation_date}</span>
-                  </div>
-                )}
+                  </div>}
               </div>
             </div>
             
-            {report.comments && (
-              <div>
+            {report.comments && <div>
                 <h4 className="text-sm font-medium">Comments</h4>
                 <p className="text-sm mt-1">{report.comments}</p>
-              </div>
-            )}
+              </div>}
             
-            {report.tier_3 && (
-              <div className="bg-blue-50 p-3 rounded-md border border-blue-200">
+            {report.tier_3 && <div className="bg-blue-50 p-3 rounded-md border border-blue-200">
                 <p className="text-sm text-blue-800">
                   <strong>Tier 3 Shortage:</strong> This is classified as a Tier 3 shortage, which may have significant impact on the healthcare system.
                 </p>
-              </div>
-            )}
+              </div>}
             
             <Separator />
             
             <div>
               <h4 className="text-sm font-medium">Official Source</h4>
-              <a 
-                href={`https://www.drugshortagescanada.ca/shortage/${report.report_id}`}
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-sm text-blue-600 hover:underline flex items-center mt-1"
-              >
+              <a href={`https://www.drugshortagescanada.ca/shortage/${report.report_id}`} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline flex items-center mt-1">
                 Drug Shortages Canada
                 <ExternalLink className="h-3.5 w-3.5 ml-1" />
               </a>
@@ -314,8 +253,6 @@ const DrugShortageInfo = ({ drugName, isLoading: externalLoading, sessionId }: D
           </TabsContent>
         </Tabs>
       </CardContent>
-    </Card>
-  );
+    </Card>;
 };
-
 export default DrugShortageInfo;
