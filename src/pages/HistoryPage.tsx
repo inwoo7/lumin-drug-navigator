@@ -42,51 +42,51 @@ const HistoryPage = () => {
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
   const { user } = useAuth();
 
-  useEffect(() => {
-    const fetchSessions = async () => {
-      if (!user) {
-        setSessions([]);
-        setIsLoading(false);
-        return;
-      }
+  const fetchSessions = async () => {
+    if (!user) {
+      setSessions([]);
+      setIsLoading(false);
+      return;
+    }
 
-      try {
-        console.log("Fetching sessions for user:", user.id);
+    try {
+      console.log("Fetching sessions for user:", user.id);
+      
+      // First try to get sessions with the user_id filter
+      const { data, error } = await supabase
+        .from('search_sessions')
+        .select('id, drug_name, created_at, has_document')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      
+      if (data && data.length > 0) {
+        console.log("Found sessions with user_id:", data.length);
+        setSessions(data);
+      } else {
+        console.log("No sessions found with user_id filter, trying without filter");
         
-        // First try to get sessions with the user_id filter
-        const { data, error } = await supabase
+        // If no sessions found with user_id filter, fetch all sessions (for testing/development)
+        const { data: allData, error: allError } = await supabase
           .from('search_sessions')
           .select('id, drug_name, created_at, has_document')
-          .eq('user_id', user.id)
           .order('created_at', { ascending: false });
-
-        if (error) throw error;
+          
+        if (allError) throw allError;
         
-        if (data && data.length > 0) {
-          console.log("Found sessions with user_id:", data.length);
-          setSessions(data);
-        } else {
-          console.log("No sessions found with user_id filter, trying without filter");
-          
-          // If no sessions found with user_id filter, fetch all sessions (for testing/development)
-          const { data: allData, error: allError } = await supabase
-            .from('search_sessions')
-            .select('id, drug_name, created_at, has_document')
-            .order('created_at', { ascending: false });
-            
-          if (allError) throw allError;
-          
-          console.log("Total sessions in database:", allData?.length || 0);
-          setSessions(allData || []);
-        }
-      } catch (error) {
-        console.error("Error fetching sessions:", error);
-        toast.error("Failed to load session history");
-      } finally {
-        setIsLoading(false);
+        console.log("Total sessions in database:", allData?.length || 0);
+        setSessions(allData || []);
       }
-    };
+    } catch (error) {
+      console.error("Error fetching sessions:", error);
+      toast.error("Failed to load session history");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchSessions();
   }, [user]);
 
@@ -119,17 +119,43 @@ const HistoryPage = () => {
     try {
       console.log("Attempting to delete session with ID:", sessionToDelete);
       
-      const { error } = await supabase
+      // Check if session exists before deleting
+      const { data: checkData, error: checkError } = await supabase
+        .from('search_sessions')
+        .select('id')
+        .eq('id', sessionToDelete)
+        .single();
+        
+      if (checkError) {
+        console.error("Error checking if session exists:", checkError);
+        if (checkError.code === 'PGRST116') {
+          console.log("Session not found in database, might be already deleted");
+        } else {
+          throw checkError;
+        }
+      } else {
+        console.log("Session found in database, proceeding with deletion");
+      }
+      
+      // Attempt to delete the session
+      const { data, error } = await supabase
         .from('search_sessions')
         .delete()
         .eq('id', sessionToDelete);
 
       if (error) {
-        console.error("Error deleting session:", error);
+        console.error("Database error during deletion:", error);
         throw error;
       }
 
+      console.log("Delete operation response:", data);
+      
+      // Refresh the sessions list after deletion
+      await fetchSessions();
+      
+      // Also update the local state as a fallback
       setSessions(sessions.filter(session => session.id !== sessionToDelete));
+      
       toast.success("Session deleted successfully");
     } catch (error) {
       console.error("Error deleting session:", error);
