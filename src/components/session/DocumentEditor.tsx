@@ -45,7 +45,7 @@ const DocumentEditor = ({
       try {
         // Check if we have a document in the database
         // Use RPC function since types don't include our new tables yet
-        const { data, error } = await supabase.rpc<SessionDocumentResponse[], { p_session_id: string }>(
+        const { data, error } = await supabase.rpc(
           'get_session_document', 
           { p_session_id: sessionId }
         );
@@ -60,8 +60,8 @@ const DocumentEditor = ({
           } else {
             initializeWithTemplate();
           }
-        } else if (data && data.length > 0 && data[0].content) {
-          setContent(data[0].content);
+        } else if (data && Array.isArray(data) && data.length > 0 && (data[0] as SessionDocumentResponse).content) {
+          setContent((data[0] as SessionDocumentResponse).content);
         } else if (initialContent) {
           setContent(initialContent);
         } else {
@@ -137,7 +137,7 @@ const DocumentEditor = ({
     
     try {
       // Use a custom RPC function to handle saving document
-      const { error } = await supabase.rpc<null, { p_session_id: string; p_content: string }>(
+      const { error } = await supabase.rpc(
         'save_session_document', 
         { 
           p_session_id: sessionId,

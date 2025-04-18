@@ -48,7 +48,7 @@ export const useOpenAIAssistant = ({
       
       try {
         // Use RPC function to load conversation since types don't include new tables
-        const { data, error } = await supabase.rpc<AIConversationResponse[], { p_session_id: string; p_assistant_type: string }>(
+        const { data, error } = await supabase.rpc(
           'get_ai_conversation', 
           { 
             p_session_id: sessionId, 
@@ -63,8 +63,8 @@ export const useOpenAIAssistant = ({
           return;
         }
         
-        if (data && data.length > 0) {
-          const conversationData = data[0];
+        if (data && Array.isArray(data) && data.length > 0) {
+          const conversationData = data[0] as AIConversationResponse;
           setThreadId(conversationData.thread_id);
           
           // Convert the stored messages to our format

@@ -105,7 +105,7 @@ const SessionPage = () => {
       
       try {
         // Using RPC instead of direct table access
-        const { data, error } = await supabase.rpc<SessionDocumentResponse[], { p_session_id: string }>(
+        const { data, error } = await supabase.rpc(
           'get_session_document', 
           { p_session_id: sessionId }
         );
@@ -117,8 +117,8 @@ const SessionPage = () => {
           return;
         }
         
-        if (data && data.length > 0 && data[0].content) {
-          setDocumentContent(data[0].content);
+        if (data && Array.isArray(data) && data.length > 0 && (data[0] as SessionDocumentResponse).content) {
+          setDocumentContent((data[0] as SessionDocumentResponse).content);
         }
       } catch (err) {
         console.error("Error loading document:", err);
@@ -145,7 +145,7 @@ const SessionPage = () => {
   const saveDocument = async (content: string) => {
     try {
       // Using RPC instead of direct table access
-      const { error } = await supabase.rpc<null, { p_session_id: string; p_content: string }>(
+      const { error } = await supabase.rpc(
         'save_session_document', 
         {
           p_session_id: sessionId,
