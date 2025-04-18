@@ -16,7 +16,7 @@ interface DocumentEditorProps {
 }
 
 // Define the type for our custom RPC function response
-type SessionDocumentResponse = {
+export interface SessionDocumentResponse {
   id: string;
   content: string;
 }
@@ -137,7 +137,7 @@ const DocumentEditor = ({
     
     try {
       // Use a custom RPC function to handle saving document
-      const { error } = await supabase.rpc<void, { p_session_id: string; p_content: string }>(
+      const { error } = await supabase.rpc<null, { p_session_id: string; p_content: string }>(
         'save_session_document', 
         { 
           p_session_id: sessionId,

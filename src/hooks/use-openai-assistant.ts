@@ -23,9 +23,14 @@ type UseOpenAIAssistantProps = {
 };
 
 // Define the types for our custom RPC function responses
-type AIConversationResponse = {
+export interface AIConversationResponse {
   thread_id: string;
-  messages: any[];
+  messages: Array<{
+    id: string;
+    role: "user" | "assistant";
+    content: string;
+    timestamp: string;
+  }>;
 }
 
 export const useOpenAIAssistant = ({
@@ -70,7 +75,7 @@ export const useOpenAIAssistant = ({
           setThreadId(conversationData.thread_id);
           
           // Convert the stored messages to our format
-          const storedMessages = conversationData.messages.map((msg: any) => ({
+          const storedMessages = conversationData.messages.map((msg) => ({
             id: msg.id,
             role: msg.role,
             content: msg.content,
@@ -129,7 +134,7 @@ export const useOpenAIAssistant = ({
             if (data.messages && data.messages.length > 0) {
               const formattedMessages = data.messages.map((msg: any) => ({
                 id: msg.id,
-                role: msg.role,
+                role: msg.role as "user" | "assistant",
                 content: msg.content,
                 timestamp: new Date(msg.timestamp)
               }));
@@ -147,7 +152,7 @@ export const useOpenAIAssistant = ({
               // Fallback if we don't get messages back
               const initialMessage = {
                 id: Date.now().toString(),
-                role: "assistant",
+                role: "assistant" as const,
                 content: data.message,
                 timestamp: new Date(),
               };

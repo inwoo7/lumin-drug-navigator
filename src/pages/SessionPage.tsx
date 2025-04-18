@@ -13,12 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { useSession, createSession } from "@/hooks/use-drug-shortages";
 import { supabase } from "@/integrations/supabase/client";
-
-// Define the type for our custom RPC function response
-type SessionDocumentResponse = {
-  id: string;
-  content: string;
-}
+import { SessionDocumentResponse } from "@/components/session/DocumentEditor";
 
 const SessionPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -145,7 +140,7 @@ const SessionPage = () => {
   const saveDocument = async (content: string) => {
     try {
       // Using RPC instead of direct table access
-      const { error } = await supabase.rpc<void, { p_session_id: string; p_content: string }>(
+      const { error } = await supabase.rpc<null, { p_session_id: string; p_content: string }>(
         'save_session_document', 
         {
           p_session_id: sessionId,
