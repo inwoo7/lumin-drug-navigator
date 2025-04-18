@@ -29,6 +29,7 @@ const SessionPage = () => {
   const [isDocumentGenerated, setIsDocumentGenerated] = useState(false);
   const [docGenerationError, setDocGenerationError] = useState(false);
   const [docLoadAttempted, setDocLoadAttempted] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   
   // Use our hook to load session data
   const { session, isLoading: isSessionLoading, isError: isSessionError } = useSession(sessionId);
@@ -70,13 +71,20 @@ const SessionPage = () => {
     return () => clearTimeout(timeoutId);
   }, [isDocumentInitializing, isDocumentGenerated, docGenerationError]);
   
-  // Effect to set document initializing state
+  // Only attempt document generation if we have a report AND we haven't already loaded a document
   useEffect(() => {
-    if (selectedReportData && !isDocumentGenerated && !isDocumentInitializing && !docGenerationError && !docLoadAttempted) {
+    if (
+      selectedReportData && 
+      !isDocumentGenerated && 
+      !isDocumentInitializing && 
+      !docGenerationError && 
+      !docLoadAttempted && 
+      documentContent === "" // Only if we don't already have content
+    ) {
       setIsDocumentInitializing(true);
       setDocLoadAttempted(true);
     }
-  }, [selectedReportData, isDocumentGenerated, isDocumentInitializing, docGenerationError, docLoadAttempted]);
+  }, [selectedReportData, isDocumentGenerated, isDocumentInitializing, docGenerationError, docLoadAttempted, documentContent]);
   
   useEffect(() => {
     const initializeSession = async () => {
@@ -142,9 +150,10 @@ const SessionPage = () => {
     initializeSession();
   }, [sessionId, location.state, navigate, session, isSessionLoading]);
 
+  // Load document from database when session is loaded
   useEffect(() => {
     const loadDocument = async () => {
-      if (!sessionId) return;
+      if (!sessionId || docLoadAttempted) return;
       
       try {
         const { data: docs, error } = await supabase
@@ -182,10 +191,12 @@ const SessionPage = () => {
     };
     
     loadDocument();
-  }, [sessionId]);
+  }, [sessionId, docLoadAttempted]);
 
   const handleUpdateDocument = (content: string) => {
     setDocumentContent(content);
+    // Save document on content update
+    saveDocument(content);
   };
   
   const handleSendToDocument = (content: string) => {
@@ -199,6 +210,8 @@ const SessionPage = () => {
   };
 
   const saveDocument = async (content: string) => {
+    if (!sessionId || !content) return;
+    
     try {
       const { error } = await supabase
         .rpc('save_session_document', {
@@ -206,40 +219,44 @@ const SessionPage = () => {
           p_content: content
         });
         
-      if (error) throw error;
+      if (error) {
+        console.error("Error saving document:", error);
+        toast.error("Failed to save document: " + error.message);
+        return;
+      }
       
-      toast.success("Session saved successfully");
+      // Update the session status to indicate it has a document
+      await supabase
+        .from('search_sessions')
+        .update({ has_document: true })
+        .eq('id', sessionId);
+        
+      console.log("Document saved successfully");
     } catch (err) {
       console.error("Error saving document:", err);
-      toast.success("Session state saved");
     }
   };
 
   const handleSaveSession = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    
     try {
       // Save document if we have one
       if (documentContent && sessionId) {
         await saveDocument(documentContent);
+        
+        toast.success("Session saved successfully", {
+          description: "All your work has been saved."
+        });
+      } else {
+        toast.info("No document to save");
       }
-      
-      // Update the session status to indicate it has a document
-      if (sessionId && documentContent) {
-        await supabase
-          .from('search_sessions')
-          .update({ has_document: true })
-          .eq('id', sessionId);
-      }
-      
-      // Ensure AI conversations are also saved
-      // (This is redundant as conversations are saved after each message,
-      // but it's a good safety check)
-      
-      toast.success("Session saved successfully", {
-        description: "All your work has been saved."
-      });
     } catch (err) {
       console.error("Error saving session:", err);
-      toast.error("Failed to save session completely");
+      toast.error("Failed to save session");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -247,22 +264,17 @@ const SessionPage = () => {
   const handleReportSelect = (reportId: string, reportType: 'shortage' | 'discontinuation') => {
     setSelectedReportId(reportId);
     setSelectedReportType(reportType);
-    // Reset document generation state when selecting a new report
-    if (isDocumentGenerated) {
-      setIsDocumentGenerated(false);
+    
+    // Reset document generation state only if we don't already have a document
+    if (!isDocumentGenerated && documentContent === "") {
       setIsDocumentInitializing(true);
+      setDocLoadAttempted(false);
     }
   };
 
   // Handle tab change
   const handleTabChange = (value: string) => {
     setActiveTab(value);
-    
-    // If switching to document tab and we don't have a document yet, initialize it
-    if (value === "document" && !isDocumentGenerated && selectedReportData && !docGenerationError && !docLoadAttempted) {
-      setIsDocumentInitializing(true);
-      setDocLoadAttempted(true);
-    }
   };
 
   if (isLoading || isSessionLoading) {
@@ -292,8 +304,9 @@ const SessionPage = () => {
           <Button 
             onClick={handleSaveSession}
             variant="outline"
+            disabled={isSaving}
           >
-            Save Session
+            {isSaving ? "Saving..." : "Save Session"}
           </Button>
         </div>
       </div>

@@ -1,12 +1,16 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { SendIcon, Loader2, FileEdit, AlertTriangle } from "lucide-react";
+import { SendIcon, Loader2, FileEdit, AlertTriangle, Copy, Edit } from "lucide-react";
 import { useOpenAIAssistant, Message as AIMessage, AssistantType } from "@/hooks/use-openai-assistant";
 import { useDrugShortageReport, useDrugShortageSearch } from "@/hooks/use-drug-shortages";
 import { toast } from "sonner";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Button as IconButton } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import ReactMarkdown from "react-markdown";
 
 interface ChatInterfaceProps {
   drugName: string;
@@ -15,7 +19,7 @@ interface ChatInterfaceProps {
   reportId?: string;
   reportType?: 'shortage' | 'discontinuation';
   documentContent?: string;
-  onSendToDocument?: (text: string) => void;
+  onSendToDocument?: (content: string) => void;
 }
 
 const ChatInterface = ({ 
@@ -30,6 +34,7 @@ const ChatInterface = ({
   const [inputMessage, setInputMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isMessageSending, setIsMessageSending] = useState(false);
   
   // Get drug shortage report data
   const { report, isLoading: isReportLoading } = useDrugShortageReport(
@@ -47,23 +52,24 @@ const ChatInterface = ({
   // Map session type to assistant type
   const assistantType: AssistantType = sessionType === "info" ? "shortage" : "document";
   
-  // Use our OpenAI assistant hook with auto-initialization
+  // Initialize the OpenAI Assistant
   const {
     messages,
     isLoading: isAILoading,
     sendMessage,
+    isInitialized,
     addMessage,
-    isInitialized
+    error
   } = useOpenAIAssistant({
     assistantType,
     sessionId,
-    drugShortageData: report || { drug_name: drugName },
-    allShortageData: shortages?.length > 0 ? shortages : undefined,
+    drugShortageData: report,
+    allShortageData: shortages,
     documentContent,
-    autoInitialize: !isReportLoading, // Only auto-initialize when report is loaded
+    autoInitialize: true,
     onDocumentUpdate: sessionType === "document" ? onSendToDocument : undefined,
     generateDocument: sessionType === "document", // Always attempt to generate document when in document mode
-    rawApiData: true  // Ensure both LLMs get full raw API response
+    rawApiData: true // Keep existing parameter that the hook expects
   });
   
   // Add initial assistant message when chat first loads if not initialized and no messages
@@ -102,6 +108,9 @@ const ChatInterface = ({
       return;
     }
     
+    // Set the message sending flag to true
+    setIsMessageSending(true);
+    
     // Special handling for document edit mode
     if (sessionType === "document" && isEditMode) {
       const editingPrompt = `Please edit the document with the following instructions: ${inputMessage}. 
@@ -124,6 +133,8 @@ Return ONLY the complete updated document content.`;
       } catch (error) {
         console.error("Error updating document:", error);
         toast.error("Failed to update document", { id: "document-edit" });
+      } finally {
+        setIsMessageSending(false);
       }
       
       setIsEditMode(false);
@@ -138,6 +149,8 @@ Return ONLY the complete updated document content.`;
     } catch (error) {
       console.error("Error sending message:", error);
       // Error is already handled in the hook, with fallback messages added
+    } finally {
+      setIsMessageSending(false);
     }
   };
 
@@ -166,7 +179,32 @@ Return ONLY the complete updated document content.`;
     }
   };
 
-  const isLoading = isAILoading || isReportLoading || isAllShortagesLoading;
+  // Only show loading indicators when actively sending a message
+  const showLoadingIndicator = isMessageSending && isAILoading;
+
+  // Function to copy message content to clipboard
+  const handleCopyMessage = (content: string) => {
+    navigator.clipboard.writeText(content)
+      .then(() => toast.success("Message copied to clipboard"))
+      .catch(() => toast.error("Failed to copy message"));
+  };
+
+  // Format chat message for display
+  const formatChatMessage = (content: string) => {
+    // Filter out JSON blocks that might be coming from API responses
+    if (content.includes('{"data":') && content.includes('"results":')) {
+      const lines = content.split("\n");
+      const filteredLines = lines.filter(line => {
+        // Only keep lines that aren't JSON structure from API or markdown code blocks with JSON
+        return !(line.includes('{"data":') || 
+               line.includes('"results":') || 
+               line.includes("```json") || 
+               line.includes("```"));
+      });
+      return filteredLines.join("\n");
+    }
+    return content;
+  };
 
   return (
     <Card className="h-full flex flex-col">
@@ -212,36 +250,68 @@ Return ONLY the complete updated document content.`;
                     : "bg-gray-100 text-gray-800"
                 }`}
               >
-                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                {message.role === "assistant" && sessionType === "document" && !isEditMode && (
-                  <>
-                    <Separator className="my-2" />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs"
-                      onClick={() => handleSendToDoc(message.content)}
-                    >
-                      Send to Document
-                    </Button>
-                  </>
-                )}
+                <div className="prose prose-sm max-w-none">
+                  {message.role === "assistant" ? (
+                    <>
+                      <ReactMarkdown>
+                        {formatChatMessage(message.content)}
+                      </ReactMarkdown>
+                      
+                      <div className="flex justify-end gap-1 mt-2">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                onClick={() => handleCopyMessage(message.content)}
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0"
+                              >
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Copy to clipboard</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        
+                        {sessionType === "document" && onSendToDocument && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <IconButton
+                                  onClick={() => handleSendToDoc(message.content)}
+                                  size="sm"
+                                  variant="ghost"
+                                >
+                                  <Edit className="h-3 w-3" />
+                                </IconButton>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Send to document</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    message.content
+                  )}
+                </div>
               </div>
             </div>
           ))}
-          {isLoading && (
+          {showLoadingIndicator && (
             <div className="flex justify-start">
               <div className="max-w-[80%] rounded-lg px-4 py-2 bg-gray-100">
                 <div className="flex items-center space-x-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   <p className="text-sm">
-                    {isReportLoading 
-                      ? "Loading drug shortage data..." 
-                      : isAllShortagesLoading
-                        ? "Loading all shortage data..."
-                        : isEditMode
-                          ? "Updating document..."
-                          : "Generating response..."}
+                    {isEditMode
+                      ? "Updating document..."
+                      : "Generating response..."}
                   </p>
                 </div>
               </div>
@@ -258,11 +328,11 @@ Return ONLY the complete updated document content.`;
             onKeyDown={handleKeyDown}
             placeholder={isEditMode ? "Describe your document changes here..." : "Type your message..."}
             className={`min-h-[60px] resize-none ${isEditMode ? "border-blue-300 focus-visible:ring-blue-400" : ""}`}
-            disabled={isLoading}
+            disabled={showLoadingIndicator}
           />
           <Button
             className={`${isEditMode ? "bg-blue-600 hover:bg-blue-700" : "bg-lumin-teal hover:bg-lumin-teal/90"} h-10 px-4`}
-            disabled={inputMessage.trim() === "" || isLoading}
+            disabled={inputMessage.trim() === "" || showLoadingIndicator}
             onClick={handleSendMessage}
           >
             <SendIcon className="h-4 w-4" />
