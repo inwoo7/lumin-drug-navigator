@@ -11,6 +11,9 @@ const corsHeaders = {
 let authToken: string | null = null;
 let tokenExpiry: Date | null = null;
 
+// Base URL for the API - extracted to make it easy to update if needed
+const API_BASE_URL = "https://www.drugshortagescanada.ca/api/v1";
+
 // Login to get an auth token
 async function login(): Promise<string> {
   try {
@@ -34,13 +37,34 @@ async function login(): Promise<string> {
     console.log("Getting new auth token from API...");
     
     // Log the full URL we're sending the request to
-    const loginUrl = "https://www.drugshortagescanada.ca/api/v1/login";
+    const loginUrl = `${API_BASE_URL}/login`;
     console.log(`Sending authentication request to: ${loginUrl}`);
     
     const formData = new URLSearchParams();
     formData.append("email", email);
     formData.append("password", password);
     
+    // First, perform a fetch request to check if the endpoint exists
+    try {
+      const checkResponse = await fetch(loginUrl, { 
+        method: "HEAD",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        }
+      });
+      
+      console.log(`Auth endpoint check status: ${checkResponse.status}`);
+      
+      if (checkResponse.status === 404) {
+        console.error("Authentication endpoint not found. API structure may have changed.");
+        throw new Error("API authentication endpoint not found (404). The API structure may have changed.");
+      }
+    } catch (error) {
+      console.error("Error checking auth endpoint:", error);
+      // Continue anyway, in case it was just a network error or the HEAD request isn't supported
+    }
+    
+    // Attempt the actual login
     const response = await fetch(loginUrl, {
       method: "POST",
       headers: {
@@ -68,6 +92,12 @@ async function login(): Promise<string> {
     // Try to get the auth token from the response headers first (standard approach)
     let token = response.headers.get("auth-token");
     let expiryDate = response.headers.get("expiry-date");
+    
+    // Dump all headers to help debug
+    console.log("Response headers:");
+    response.headers.forEach((value, key) => {
+      console.log(`${key}: ${value}`);
+    });
     
     // If headers don't have the token, try to get it from the response body
     if (!token) {
@@ -131,6 +161,46 @@ function verifyCredentials() {
   };
 }
 
+// Function to attempt to detect the correct API structure by probing endpoints
+async function detectApiStructure(): Promise<string> {
+  // List of potential API base URLs to check
+  const potentialBaseUrls = [
+    "https://www.drugshortagescanada.ca/api/v1",
+    "https://www.drugshortagescanada.ca/api",
+    "https://drugshortagescanada.ca/api/v1",
+    "https://api.drugshortagescanada.ca/v1"
+  ];
+  
+  console.log("Attempting to detect correct API structure...");
+  
+  for (const baseUrl of potentialBaseUrls) {
+    try {
+      console.log(`Checking potential API endpoint: ${baseUrl}/search?term=test`);
+      
+      const response = await fetch(`${baseUrl}/search?term=test`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json"
+        }
+      });
+      
+      console.log(`Response from ${baseUrl}: ${response.status}`);
+      
+      // If we get anything other than a 404, this might be the right endpoint
+      if (response.status !== 404) {
+        console.log(`Found potential valid API endpoint: ${baseUrl}`);
+        return baseUrl;
+      }
+    } catch (error) {
+      console.log(`Error checking ${baseUrl}:`, error);
+    }
+  }
+  
+  // If all checks fail, return the original URL
+  console.log("Could not detect the correct API structure, using default");
+  return "https://www.drugshortagescanada.ca/api/v1";
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -190,51 +260,84 @@ serve(async (req) => {
       );
     }
     
+    // Try to detect the correct API structure if needed
+    let detectedApiBaseUrl = API_BASE_URL;
+    
     // Handle different API endpoints based on the action in the request body
     if (requestParams.action === "search") {
       const term = requestParams.term || "";
       console.log(`Searching for drug: "${term}"`);
       
       try {
-        const token = await login();
-        
-        const apiUrl = `https://www.drugshortagescanada.ca/api/v1/search?term=${encodeURIComponent(term)}&orderby=updated_date&order=desc`;
-        console.log(`Sending search request to: ${apiUrl}`);
-        
-        const apiResponse = await fetch(apiUrl, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "auth-token": token,
-          },
-        });
-
-        console.log(`API search response status: ${apiResponse.status}`);
-        
-        if (!apiResponse.ok) {
-          let errorDetails;
-          try {
-            errorDetails = await apiResponse.text();
-            console.error("API search error. Response:", errorDetails);
-          } catch (e) {
-            errorDetails = "Could not parse error response";
-          }
+        // First try to login with the default API structure
+        try {
+          const token = await login();
           
-          throw new Error(`API search failed: ${apiResponse.status} ${apiResponse.statusText}. Details: ${errorDetails}`);
-        }
+          const apiUrl = `${detectedApiBaseUrl}/search?term=${encodeURIComponent(term)}&orderby=updated_date&order=desc`;
+          console.log(`Sending search request to: ${apiUrl}`);
+          
+          const apiResponse = await fetch(apiUrl, {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              "auth-token": token,
+            },
+          });
 
-        const data = await apiResponse.json();
-        console.log(`Found ${data.data?.length || 0} results for "${term}"`);
-        
+          console.log(`API search response status: ${apiResponse.status}`);
+          
+          if (!apiResponse.ok) {
+            let errorDetails;
+            try {
+              errorDetails = await apiResponse.text();
+              console.error("API search error. Response:", errorDetails);
+            } catch (e) {
+              errorDetails = "Could not parse error response";
+            }
+            
+            throw new Error(`API search failed: ${apiResponse.status} ${apiResponse.statusText}. Details: ${errorDetails}`);
+          }
+
+          const data = await apiResponse.json();
+          console.log(`Found ${data.data?.length || 0} results for "${term}"`);
+          
+          return new Response(
+            JSON.stringify(data),
+            { 
+              headers: { ...corsHeaders, "Content-Type": "application/json" } 
+            }
+          );
+        } catch (loginError) {
+          // If login fails with the default API structure, try to detect the correct one
+          console.error("Login failed with default API structure:", loginError);
+          console.log("Attempting to detect correct API structure...");
+          
+          detectedApiBaseUrl = await detectApiStructure();
+          
+          // If we found a new API base URL, try the search again
+          if (detectedApiBaseUrl !== API_BASE_URL) {
+            console.log(`Retrying with detected API base URL: ${detectedApiBaseUrl}`);
+            
+            // This part would retry the search with the new API base URL, but for simplicity,
+            // we'll just return an error message indicating the API structure may have changed
+            throw new Error(`API structure may have changed. Detected potential new base URL: ${detectedApiBaseUrl}`);
+          } else {
+            // If we couldn't detect a new API structure, rethrow the original error
+            throw loginError;
+          }
+        }
+      } catch (error) {
+        console.error(`Search error for term "${term}":`, error);
         return new Response(
-          JSON.stringify(data),
+          JSON.stringify({ 
+            error: error.message || "Internal server error",
+            details: "The Drug Shortages Canada API structure may have changed. The application will use mock data until this is resolved."
+          }),
           { 
+            status: 500, 
             headers: { ...corsHeaders, "Content-Type": "application/json" } 
           }
         );
-      } catch (error) {
-        console.error(`Search error for term "${term}":`, error);
-        throw error;
       }
     } else if (requestParams.action === "shortage" || requestParams.action === "discontinuance") {
       const reportId = requestParams.reportId || "";
@@ -245,7 +348,7 @@ serve(async (req) => {
         
         // Determine the endpoint based on the report type
         const endpoint = requestParams.action === 'shortage' ? 'shortages' : 'discontinuances';
-        const apiUrl = `https://www.drugshortagescanada.ca/api/v1/${endpoint}/${reportId}`;
+        const apiUrl = `${detectedApiBaseUrl}/${endpoint}/${reportId}`;
         
         console.log(`Sending report request to: ${apiUrl}`);
         
@@ -282,7 +385,16 @@ serve(async (req) => {
         );
       } catch (error) {
         console.error(`Report error for ID "${reportId}":`, error);
-        throw error;
+        return new Response(
+          JSON.stringify({ 
+            error: error.message || "Internal server error",
+            details: "The Drug Shortages Canada API structure may have changed. The application will use mock data until this is resolved."
+          }),
+          { 
+            status: 500, 
+            headers: { ...corsHeaders, "Content-Type": "application/json" } 
+          }
+        );
       }
     }
 

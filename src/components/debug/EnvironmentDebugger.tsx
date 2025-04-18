@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, CheckCircle, RefreshCw, Info, Server, ExternalLink } from "lucide-react";
+import { AlertCircle, CheckCircle, RefreshCw, Info, Server, ExternalLink, Bug } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -64,12 +64,13 @@ const EnvironmentDebugger = () => {
         console.error("API test error:", error);
         setApiTestResult({
           success: false,
-          message: "Edge Function error: " + error.message
+          message: "Edge Function error: " + error.message,
+          details: error
         });
         return;
       }
       
-      if (data.error) {
+      if (data?.error) {
         console.error("API response error:", data.error);
         setApiTestResult({
           success: false,
@@ -80,7 +81,7 @@ const EnvironmentDebugger = () => {
       }
       
       // Check if we got a valid response
-      if (Array.isArray(data.data)) {
+      if (data?.data && Array.isArray(data.data)) {
         setApiTestResult({
           success: true,
           message: `Successfully connected to API and received ${data.data.length} results`,
@@ -104,6 +105,30 @@ const EnvironmentDebugger = () => {
     }
   };
   
+  const resetAPICache = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('drug-shortage-api', {
+        method: 'POST',
+        body: { 
+          action: 'resetCache'
+        }
+      });
+      
+      if (error) {
+        console.error("Reset cache error:", error);
+        toast.error("Failed to reset API cache: " + error.message);
+        return;
+      }
+      
+      toast.success("API cache reset successfully");
+      // Refresh status
+      checkEdgeFunction();
+    } catch (error) {
+      console.error("Error resetting API cache:", error);
+      toast.error("Error resetting API cache: " + (error as Error).message);
+    }
+  };
+  
   // Check Edge Function on mount
   useEffect(() => {
     checkEdgeFunction();
@@ -117,6 +142,7 @@ const EnvironmentDebugger = () => {
         onClick={() => setVisible(true)}
         className="fixed bottom-4 right-4 z-50 bg-white shadow-md border-red-300"
       >
+        <Bug className="h-4 w-4 mr-2" />
         Debug Environment
       </Button>
     );
@@ -126,7 +152,10 @@ const EnvironmentDebugger = () => {
     <Card className="fixed bottom-4 right-4 z-50 w-96 shadow-lg">
       <CardHeader className="pb-2">
         <div className="flex justify-between items-center">
-          <CardTitle className="text-sm">Environment Debugger</CardTitle>
+          <CardTitle className="text-sm flex items-center">
+            <Bug className="h-4 w-4 mr-2" />
+            Environment Debugger
+          </CardTitle>
           <div className="flex gap-2">
             <Button 
               variant="ghost" 
@@ -175,22 +204,32 @@ const EnvironmentDebugger = () => {
             </span>
           </div>
           
-          <div className="pt-2 flex justify-center">
+          <div className="flex justify-between gap-2">
             <Button
               size="sm"
               variant="outline"
               disabled={apiTestInProgress || edgeFunctionStatus === 'loading'}
               onClick={testDrugShortageAPI}
-              className="w-full"
+              className="flex-1"
             >
               {apiTestInProgress ? (
                 <>
                   <RefreshCw className="h-3 w-3 mr-2 animate-spin" />
-                  Testing Connection...
+                  Testing...
                 </>
               ) : (
                 "Test API Connection"
               )}
+            </Button>
+            
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={apiTestInProgress || edgeFunctionStatus === 'loading'}
+              onClick={resetAPICache}
+              className="flex-1"
+            >
+              Reset API Cache
             </Button>
           </div>
           
@@ -207,7 +246,7 @@ const EnvironmentDebugger = () => {
                 {apiTestResult.message}
               </p>
               {apiTestResult.details && (
-                <pre className="mt-1 text-xs overflow-auto max-h-20 p-1 bg-gray-50 rounded">
+                <pre className="mt-1 text-xs overflow-auto max-h-32 p-1 bg-gray-50 rounded">
                   {JSON.stringify(apiTestResult.details, null, 2)}
                 </pre>
               )}
@@ -220,8 +259,7 @@ const EnvironmentDebugger = () => {
               <div>
                 <p className="font-medium text-blue-800 mb-1">Supabase Edge Function:</p>
                 <p className="text-blue-700 text-xs">
-                  A Supabase Edge Function has been created to proxy requests to the Drug Shortages Canada API, 
-                  solving the CORS restrictions.
+                  The Edge Function has been updated to detect API changes and handle authentication issues better.
                 </p>
                 <p className="text-blue-700 text-xs mt-1">
                   {edgeFunctionStatus === 'authenticated' 
@@ -232,14 +270,24 @@ const EnvironmentDebugger = () => {
                         ? "The Edge Function is not available. Check Supabase settings."
                         : "Checking Edge Function status..."}
                 </p>
-                <a 
-                  href="https://supabase.com/dashboard/project/oeazqjeopkepqynrqsxj/functions/drug-shortage-api/logs" 
-                  target="_blank"
-                  className="text-blue-600 hover:underline flex items-center mt-1"
-                >
-                  View Edge Function Logs
-                  <ExternalLink className="h-3 w-3 ml-1" />
-                </a>
+                <div className="flex flex-col space-y-1 mt-2">
+                  <a 
+                    href="https://supabase.com/dashboard/project/oeazqjeopkepqynrqsxj/functions/drug-shortage-api/logs" 
+                    target="_blank"
+                    className="text-blue-600 hover:underline flex items-center"
+                  >
+                    View Edge Function Logs
+                    <ExternalLink className="h-3 w-3 ml-1" />
+                  </a>
+                  <a 
+                    href="https://supabase.com/dashboard/project/oeazqjeopkepqynrqsxj/settings/functions" 
+                    target="_blank"
+                    className="text-blue-600 hover:underline flex items-center"
+                  >
+                    Check Function Secrets
+                    <ExternalLink className="h-3 w-3 ml-1" />
+                  </a>
+                </div>
               </div>
             </div>
           </div>
@@ -265,10 +313,11 @@ const EnvironmentDebugger = () => {
           <div className="pt-2 bg-yellow-50 p-3 rounded-md border border-yellow-200">
             <p className="font-medium text-yellow-800 mb-1">Troubleshooting Tips:</p>
             <ul className="list-disc pl-4 mt-1 space-y-1 text-yellow-700">
-              <li>Edge Function uses your API credentials stored in Supabase secrets</li>
-              <li>Add <b>VITE_DRUG_SHORTAGE_API_EMAIL</b> and <b>VITE_DRUG_SHORTAGE_API_PASSWORD</b> as secrets</li>
-              <li>If the Edge Function is unavailable, it may be still deploying</li>
+              <li>The API structure may have changed, causing 404 errors</li>
               <li>Check Edge Function logs for detailed error information</li>
+              <li>Use "Reset API Cache" to clear the cached authentication token</li>
+              <li>Verify your API credentials are correct in Supabase secrets</li>
+              <li>If issues persist, the application will use mock data automatically</li>
             </ul>
           </div>
         </div>

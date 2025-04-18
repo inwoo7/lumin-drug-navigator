@@ -25,15 +25,24 @@ export const useDrugShortageSearch = (drugName: string) => {
       } catch (err: any) {
         console.error('Error searching drug shortages:', err);
         
+        // Check if this is the first time showing the error
+        const errorId = `api-error-${drugName}`;
+        
         // Check if the error is due to missing credentials
         if (err.missingCredentials) {
           toast.error("API credentials not configured. Using mock data.", {
             id: "missing-credentials",
             duration: 5000
           });
+        } else if (err.message && err.message.includes('404')) {
+          // Special handling for 404 errors which likely indicate API endpoint changes
+          toast.error("The Drug Shortages Canada API may have changed. Using mock data.", {
+            id: errorId,
+            duration: 5000
+          });
         } else {
           toast.error(`Error fetching drug shortage data: ${err.message || 'Unknown error'}. Using mock data.`, {
-            id: "api-error",
+            id: errorId,
             duration: 5000
           });
         }
@@ -81,15 +90,24 @@ export const useDrugShortageReport = (
       } catch (err: any) {
         console.error('Error fetching drug shortage report:', err);
         
+        // Create a unique ID for this error to prevent duplicate toasts
+        const errorId = `report-error-${reportId}`;
+        
         // Check if the error is due to missing credentials
         if (err.missingCredentials) {
           toast.error("API credentials not configured. Using mock data.", {
             id: "missing-credentials",
             duration: 5000
           });
+        } else if (err.message && err.message.includes('404')) {
+          // Special handling for 404 errors which likely indicate API endpoint changes
+          toast.error("The Drug Shortages Canada API may have changed. Using mock data.", {
+            id: errorId,
+            duration: 5000
+          });
         } else {
           toast.error(`Error fetching drug shortage report: ${err.message || 'Unknown error'}. Using mock data.`, {
-            id: "report-api-error",
+            id: errorId,
             duration: 5000
           });
         }
