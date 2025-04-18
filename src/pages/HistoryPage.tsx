@@ -117,6 +117,8 @@ const HistoryPage = () => {
     if (!sessionToDelete) return;
     
     try {
+      console.log("Attempting to delete session with ID:", sessionToDelete);
+      
       const { error } = await supabase
         .from('search_sessions')
         .delete()
