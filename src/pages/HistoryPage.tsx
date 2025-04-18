@@ -14,6 +14,8 @@ import {
 import { Link } from "react-router-dom";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 interface SessionHistory {
   id: string;
@@ -26,23 +28,26 @@ const HistoryPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [sessions, setSessions] = useState<SessionHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { user } = useAuth();
 
   useEffect(() => {
     const fetchSessions = async () => {
+      if (!user) {
+        setSessions([]);
+        setIsLoading(false);
+        return;
+      }
+
       try {
-        // In a real app, this would fetch actual data from Supabase
-        // For now, let's use mock data
-        const mockSessions = [
-          { id: "1", drug_name: "Amoxicillin", created_at: "2023-04-15T10:30:00Z", has_document: true },
-          { id: "2", drug_name: "Lisinopril", created_at: "2023-04-14T14:45:00Z", has_document: false },
-          { id: "3", drug_name: "Metformin", created_at: "2023-04-13T09:15:00Z", has_document: true },
-          { id: "4", drug_name: "Atorvastatin", created_at: "2023-04-12T11:20:00Z", has_document: false },
-          { id: "5", drug_name: "Losartan", created_at: "2023-04-11T16:10:00Z", has_document: true },
-          { id: "6", drug_name: "Amlodipine", created_at: "2023-04-10T08:30:00Z", has_document: false },
-          { id: "7", drug_name: "Metoprolol", created_at: "2023-04-09T13:45:00Z", has_document: true },
-        ];
-        
-        setSessions(mockSessions);
+        const { data, error } = await supabase
+          .from('search_sessions')
+          .select('id, drug_name, created_at, has_document')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        setSessions(data || []);
       } catch (error) {
         console.error("Error fetching sessions:", error);
         toast.error("Failed to load session history");
@@ -52,7 +57,7 @@ const HistoryPage = () => {
     };
 
     fetchSessions();
-  }, []);
+  }, [user]);
 
   const filteredSessions = sessions.filter(
     (session) =>
@@ -71,13 +76,25 @@ const HistoryPage = () => {
     });
   };
 
-  const handleDeleteSession = (id: string, e: React.MouseEvent) => {
+  const handleDeleteSession = async (id: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     
-    // In a real app, this would delete the session from Supabase
-    setSessions(sessions.filter(session => session.id !== id));
-    toast.success("Session deleted successfully");
+    try {
+      const { error } = await supabase
+        .from('search_sessions')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user?.id);
+
+      if (error) throw error;
+
+      setSessions(sessions.filter(session => session.id !== id));
+      toast.success("Session deleted successfully");
+    } catch (error) {
+      console.error("Error deleting session:", error);
+      toast.error("Failed to delete session");
+    }
   };
 
   return (
