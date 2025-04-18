@@ -5,39 +5,61 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { SendIcon, Loader2 } from "lucide-react";
-
-interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: Date;
-}
+import { useOpenAIAssistant, Message as AIMessage, AssistantType } from "@/hooks/use-openai-assistant";
+import { useDrugShortageReport } from "@/hooks/use-drug-shortages";
 
 interface ChatInterfaceProps {
   drugName: string;
   sessionType: "info" | "document";
+  sessionId?: string;
+  reportId?: string;
+  reportType?: 'shortage' | 'discontinuation';
   onSendToDocument?: (text: string) => void;
 }
 
-const ChatInterface = ({ drugName, sessionType, onSendToDocument }: ChatInterfaceProps) => {
-  const [messages, setMessages] = useState<Message[]>([]);
+const ChatInterface = ({ 
+  drugName, 
+  sessionType, 
+  sessionId,
+  reportId,
+  reportType = 'shortage',
+  onSendToDocument 
+}: ChatInterfaceProps) => {
   const [inputMessage, setInputMessage] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
+  
+  // Get drug shortage report data
+  const { report, isLoading: isReportLoading } = useDrugShortageReport(
+    reportId, 
+    reportType, 
+    sessionId
+  );
+  
+  // Map session type to assistant type
+  const assistantType: AssistantType = sessionType === "info" ? "shortage" : "document";
+  
+  // Use our OpenAI assistant hook
+  const {
+    messages,
+    isLoading: isAILoading,
+    sendMessage,
+    addMessage
+  } = useOpenAIAssistant({
+    assistantType,
+    sessionId,
+    drugShortageData: report || { drug_name: drugName }
+  });
+  
+  // Add initial assistant message when chat first loads
   useEffect(() => {
-    // Add initial assistant message when chat first loads
-    const initialMessage: Message = {
-      id: "init",
-      role: "assistant",
-      content: sessionType === "info"
+    if (messages.length === 0 && !isReportLoading && report) {
+      const initialMessage = sessionType === "info"
         ? `Hello! I'm your AI assistant for drug shortage information. I can provide insights about ${drugName} shortages, alternative therapies, and conservation strategies. How can I help you today?`
-        : `I'm here to help you create a document about the ${drugName} shortage. You can ask me to suggest content, format text, or provide clinical information. What would you like to include in your document?`,
-      timestamp: new Date(),
-    };
-
-    setMessages([initialMessage]);
-  }, [drugName, sessionType]);
+        : `I'm here to help you create a document about the ${drugName} shortage. You can ask me to suggest content, format text, or provide clinical information. What would you like to include in your document?`;
+      
+      addMessage("assistant", initialMessage);
+    }
+  }, [drugName, sessionType, messages.length, report, isReportLoading]);
 
   useEffect(() => {
     // Scroll to bottom when messages change
@@ -49,39 +71,27 @@ const ChatInterface = ({ drugName, sessionType, onSendToDocument }: ChatInterfac
   };
 
   const handleSendMessage = async () => {
-    if (inputMessage.trim() === "" || isLoading) return;
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: inputMessage,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInputMessage("");
-    setIsLoading(true);
-
-    try {
-      // Here we would normally make an API call to an LLM service
-      // For now, we'll simulate a response with a slight delay
-      
-      setTimeout(() => {
-        const assistantResponse: Message = {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: getMockResponse(inputMessage, drugName, sessionType),
-          timestamp: new Date(),
-        };
-        
-        setMessages((prev) => [...prev, assistantResponse]);
-        setIsLoading(false);
-      }, 1500);
-      
-    } catch (error) {
-      console.error("Error getting AI response:", error);
-      setIsLoading(false);
+    if (inputMessage.trim() === "" || isAILoading) return;
+    
+    // If we're waiting for the drug data, show a toast or message
+    if (isReportLoading) {
+      addMessage("user", inputMessage);
+      addMessage("assistant", "I'm still loading the drug shortage data. Please wait a moment before asking questions.");
+      setInputMessage("");
+      return;
     }
+    
+    // If we don't have a report ID, use a simpler prompt
+    if (!report && !reportId) {
+      addMessage("user", inputMessage);
+      addMessage("assistant", "I don't have specific shortage data for this drug yet. Try selecting a shortage report first, or ask a general question about drug shortages.");
+      setInputMessage("");
+      return;
+    }
+    
+    const message = inputMessage;
+    setInputMessage("");
+    await sendMessage(message);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -96,6 +106,8 @@ const ChatInterface = ({ drugName, sessionType, onSendToDocument }: ChatInterfac
       onSendToDocument(content);
     }
   };
+
+  const isLoading = isAILoading || isReportLoading;
 
   return (
     <Card className="h-full flex flex-col">
@@ -140,7 +152,11 @@ const ChatInterface = ({ drugName, sessionType, onSendToDocument }: ChatInterfac
               <div className="max-w-[80%] rounded-lg px-4 py-2 bg-gray-100">
                 <div className="flex items-center space-x-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <p className="text-sm">Generating response...</p>
+                  <p className="text-sm">
+                    {isReportLoading 
+                      ? "Loading drug shortage data..." 
+                      : "Generating response..."}
+                  </p>
                 </div>
               </div>
             </div>
@@ -170,33 +186,5 @@ const ChatInterface = ({ drugName, sessionType, onSendToDocument }: ChatInterfac
     </Card>
   );
 };
-
-// Mock responses for demo
-function getMockResponse(message: string, drugName: string, type: string): string {
-  if (type === "info") {
-    if (message.toLowerCase().includes("alternative")) {
-      return `For ${drugName}, there are several alternatives you can consider:\n\n1. Drug Alternative A - similar mechanism of action but different class\n2. Drug Alternative B - same class, different molecule\n3. Therapeutic Alternative C - different approach but treats the same condition\n\nThe best choice depends on the patient's specific condition, comorbidities, and other medications.`;
-    } else if (message.toLowerCase().includes("conserv") || message.toLowerCase().includes("strateg")) {
-      return `Conservation strategies for ${drugName} during shortages:\n\n• Limit to priority patients (those with no alternatives)\n• Consider dose reduction where clinically appropriate\n• Extend dosing intervals when possible\n• Implement batch compounding to minimize waste\n• Restrict new starts except for essential cases`;
-    } else if (message.toLowerCase().includes("duration") || message.toLowerCase().includes("long")) {
-      return `Based on the information from Drug Shortages Canada, this ${drugName} shortage is expected to continue until approximately July 30, 2023. However, shortage timelines often change as manufacturers update their production schedules.`;
-    } else {
-      return `I understand you have a question about the ${drugName} shortage. Could you provide more specifics about what you'd like to know? I can help with:\n\n• Alternative medications\n• Conservation strategies\n• Clinical prioritization\n• Patient information resources\n• Supply management`;
-    }
-  } else {
-    // Document mode responses
-    if (message.toLowerCase().includes("introduction") || message.toLowerCase().includes("start")) {
-      return `**Drug Shortage Notice: ${drugName}**\n\nDate: April 17, 2023\n\nRe: Ongoing shortage of ${drugName}\n\nDear Healthcare Team,\n\nThis memorandum is to inform you of the current shortage of ${drugName} affecting our institution. This shortage is expected to continue until July 30, 2023. The following document outlines our management strategy, therapeutic alternatives, and clinical prioritization guidelines.`;
-    } else if (message.toLowerCase().includes("alternatives") || message.toLowerCase().includes("options")) {
-      return `**Therapeutic Alternatives for ${drugName}**\n\n1. First-line alternatives:\n   • Alternative A (dosing: XX mg daily)\n   • Alternative B (dosing: XX mg twice daily)\n\n2. Second-line alternatives:\n   • Alternative C (Note: requires renal dosing adjustment)\n   • Alternative D (Note: contraindicated in hepatic impairment)\n\n3. Special populations considerations:\n   • Pediatric patients: [specific recommendations]\n   • Geriatric patients: [specific recommendations]\n   • Pregnancy: [specific recommendations]`;
-    } else if (message.toLowerCase().includes("prioritization") || message.toLowerCase().includes("criteria")) {
-      return `**Patient Prioritization Criteria**\n\n• Priority 1: Patients with life-threatening conditions where no alternatives exist\n• Priority 2: Patients currently stabilized on therapy where changing may cause clinical deterioration\n• Priority 3: New starts for serious conditions where alternatives are less effective\n• Priority 4: Patients with chronic, stable conditions where alternatives are available\n\nAll decisions should be made on a case-by-case basis with clinical judgment.`;
-    } else if (message.toLowerCase().includes("conclusion") || message.toLowerCase().includes("end")) {
-      return `**Conclusion and Contacts**\n\nThis shortage situation will be monitored continuously and updates will be provided as new information becomes available. The Pharmacy Department will reassess medication supplies daily.\n\nFor clinical questions: [Clinical Pharmacist Contact]\nFor supply questions: [Pharmacy Procurement Contact]\n\nWe appreciate your cooperation in managing this shortage.\n\nSincerely,\n\n[Pharmacy Director]\n[Chief Medical Officer]`;
-    } else {
-      return `I can help you draft content for your document about the ${drugName} shortage. Would you like me to provide:\n\n• An introduction section\n• Information about therapeutic alternatives\n• Patient prioritization criteria\n• Implementation strategies\n• A conclusion\n\nOr you can ask for specific content you'd like me to generate for your document.`;
-    }
-  }
-}
 
 export default ChatInterface;

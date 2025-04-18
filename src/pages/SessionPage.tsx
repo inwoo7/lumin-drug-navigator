@@ -20,6 +20,8 @@ const SessionPage = () => {
   const [drugName, setDrugName] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [documentContent, setDocumentContent] = useState("");
+  const [selectedReportId, setSelectedReportId] = useState<string | undefined>();
+  const [selectedReportType, setSelectedReportType] = useState<'shortage' | 'discontinuation'>('shortage');
   
   // Use our hook to load session data
   const { session, isLoading: isSessionLoading, isError: isSessionError } = useSession(sessionId);
@@ -104,6 +106,12 @@ const SessionPage = () => {
     toast.success("Session saved successfully");
   };
 
+  // Handle report selection from DrugShortageInfo
+  const handleReportSelect = (reportId: string, reportType: 'shortage' | 'discontinuation') => {
+    setSelectedReportId(reportId);
+    setSelectedReportType(reportType);
+  };
+
   if (isLoading || isSessionLoading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
@@ -153,8 +161,19 @@ const SessionPage = () => {
         
         <TabsContent value="info" className="mt-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <DrugShortageInfo drugName={drugName} isLoading={false} sessionId={sessionId} />
-            <ChatInterface drugName={drugName} sessionType="info" />
+            <DrugShortageInfo 
+              drugName={drugName} 
+              isLoading={false} 
+              sessionId={sessionId}
+              onReportSelect={handleReportSelect}
+            />
+            <ChatInterface 
+              drugName={drugName} 
+              sessionType="info" 
+              sessionId={sessionId}
+              reportId={selectedReportId}
+              reportType={selectedReportType}
+            />
           </div>
         </TabsContent>
         
@@ -171,10 +190,16 @@ const SessionPage = () => {
           </Card>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <DocumentEditor drugName={drugName} onContentChange={handleUpdateDocument} />
+            <DocumentEditor 
+              drugName={drugName} 
+              onContentChange={handleUpdateDocument} 
+            />
             <ChatInterface 
               drugName={drugName} 
               sessionType="document" 
+              sessionId={sessionId}
+              reportId={selectedReportId}
+              reportType={selectedReportType}
               onSendToDocument={handleSendToDocument} 
             />
           </div>

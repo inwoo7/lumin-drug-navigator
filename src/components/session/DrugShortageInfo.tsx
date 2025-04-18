@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -7,33 +8,58 @@ import { AlertTriangle, Clock, Calendar, ExternalLink, Loader2 } from "lucide-re
 import { useDrugShortageSearch, useDrugShortageReport } from "@/hooks/use-drug-shortages";
 import { DrugShortageReport, DrugShortageSearchResult } from "@/integrations/drugShortage/api";
 import { Button } from "@/components/ui/button";
+
 type DrugShortageInfoProps = {
   drugName: string;
   isLoading?: boolean;
   sessionId?: string;
+  onReportSelect?: (reportId: string, reportType: 'shortage' | 'discontinuation') => void;
 };
+
 const DrugShortageInfo = ({
   drugName,
   isLoading: externalLoading,
-  sessionId
+  sessionId,
+  onReportSelect
 }: DrugShortageInfoProps) => {
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
   const [selectedReportType, setSelectedReportType] = useState<'shortage' | 'discontinuation'>('shortage');
+  
   const {
     shortages,
     isLoading: isSearchLoading,
     isError: isSearchError
   } = useDrugShortageSearch(drugName, sessionId);
+  
   const {
     report,
     isLoading: isReportLoading,
     isError: isReportError
   } = useDrugShortageReport(selectedReport || undefined, selectedReportType, sessionId);
+  
+  // If we have shortages but no selected report, select the first one
   if (shortages.length > 0 && !selectedReport && !isSearchLoading) {
     setSelectedReport(shortages[0].id);
     setSelectedReportType(shortages[0].type);
+    // Notify parent component if callback exists
+    if (onReportSelect) {
+      onReportSelect(shortages[0].id, shortages[0].type);
+    }
   }
+  
+  // Handle report selection
+  const handleReportSelection = (reportId: string, reportType: 'shortage' | 'discontinuation') => {
+    setSelectedReport(reportId);
+    setSelectedReportType(reportType);
+    
+    // Notify parent component if callback exists
+    if (onReportSelect) {
+      onReportSelect(reportId, reportType);
+    }
+  };
+  
   const isLoading = externalLoading || isSearchLoading;
+  
   if (isLoading) {
     return <Card className="h-full">
         <CardContent className="h-full flex items-center justify-center p-6">
@@ -44,6 +70,7 @@ const DrugShortageInfo = ({
         </CardContent>
       </Card>;
   }
+  
   if (isSearchError) {
     return <Card className="h-full">
         <CardContent className="p-6">
@@ -60,6 +87,7 @@ const DrugShortageInfo = ({
         </CardContent>
       </Card>;
   }
+  
   if (shortages.length === 0) {
     return <Card className="h-full">
         <CardHeader>
@@ -80,18 +108,19 @@ const DrugShortageInfo = ({
         </CardContent>
       </Card>;
   }
+  
   const ReportSelector = () => shortages.length > 1 ? <div className="mb-4">
         <h4 className="text-sm font-medium mb-2">Select Report:</h4>
         <div className="grid grid-cols-1 gap-2 max-h-[200px] overflow-y-auto">
-          {shortages.map(shortage => <Card key={shortage.id} className={`cursor-pointer border ${selectedReport === shortage.id ? 'border-lumin-teal bg-lumin-teal/5' : 'border-gray-200'}`} onClick={() => {
-        setSelectedReport(shortage.id);
-        setSelectedReportType(shortage.type);
-      }}>
+          {shortages.map(shortage => <Card 
+            key={shortage.id} 
+            className={`cursor-pointer border ${selectedReport === shortage.id ? 'border-lumin-teal bg-lumin-teal/5' : 'border-gray-200'}`} 
+            onClick={() => handleReportSelection(shortage.id, shortage.type)}
+          >
               <CardContent className="p-3">
                 <div className="flex justify-between items-start">
                   <div className="text-sm">
                     <div className="font-medium">{shortage.brand_name}</div>
-                    
                     <div className="text-xs text-gray-500">{shortage.report_id}</div>
                   </div>
                   <Badge variant={shortage.status === "Active" ? "destructive" : "outline"}>
@@ -102,6 +131,7 @@ const DrugShortageInfo = ({
             </Card>)}
         </div>
       </div> : null;
+  
   if (isReportLoading || !report) {
     return <Card className="h-full">
         <CardHeader>
@@ -116,6 +146,7 @@ const DrugShortageInfo = ({
         </CardContent>
       </Card>;
   }
+  
   const getImpactColor = (status: string) => {
     const statusLower = status.toLowerCase();
     if (statusLower.includes('discontinued') || statusLower.includes('active')) {
@@ -128,6 +159,7 @@ const DrugShortageInfo = ({
       return "bg-gray-500";
     }
   };
+  
   return <Card className="h-full">
       <CardHeader>
         <div className="flex justify-between items-start">
@@ -255,4 +287,5 @@ const DrugShortageInfo = ({
       </CardContent>
     </Card>;
 };
+
 export default DrugShortageInfo;
