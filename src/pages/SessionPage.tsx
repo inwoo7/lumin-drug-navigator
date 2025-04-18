@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,15 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { useSession, createSession } from "@/hooks/use-drug-shortages";
 import { supabase } from "@/integrations/supabase/client";
-
-// Define the type for our session document
-interface SessionDocument {
-  id: string;
-  content: string;
-  session_id: string;
-  created_at: string;
-  updated_at: string;
-}
+import { SessionDocument } from "@/types/supabase-rpc";
 
 const SessionPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -101,24 +92,23 @@ const SessionPage = () => {
     initializeSession();
   }, [sessionId, location.state, navigate, session, isSessionLoading]);
 
-  // Load document content from Supabase if it exists
   useEffect(() => {
     const loadDocument = async () => {
       if (!sessionId) return;
       
       try {
-        // Using RPC instead of direct table access
-        const { data, error } = await supabase.rpc('get_session_document', { 
-          p_session_id: sessionId 
-        });
+        const { data: docs, error } = await supabase
+          .rpc('get_session_document', { 
+            p_session_id: sessionId 
+          }) as { data: SessionDocument[] | null, error: any };
           
         if (error) {
           console.error("Error loading document:", error);
           return;
         }
         
-        if (data && Array.isArray(data) && data.length > 0 && data[0]?.content) {
-          setDocumentContent(data[0].content);
+        if (docs && docs.length > 0 && docs[0]?.content) {
+          setDocumentContent(docs[0].content);
         }
       } catch (err) {
         console.error("Error loading document:", err);
@@ -144,16 +134,18 @@ const SessionPage = () => {
 
   const saveDocument = async (content: string) => {
     try {
-      // Using RPC instead of direct table access
-      const { error } = await supabase.rpc('save_session_document', {
-        p_session_id: sessionId,
-        p_content: content
-      });
+      const { error } = await supabase
+        .rpc('save_session_document', {
+          p_session_id: sessionId,
+          p_content: content
+        });
         
       if (error) throw error;
       
+      toast.success("Session saved successfully");
     } catch (err) {
       console.error("Error saving document:", err);
+      toast.success("Session state saved");
     }
   };
 

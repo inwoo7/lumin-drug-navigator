@@ -1,7 +1,7 @@
-
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { AIConversation } from "@/types/supabase-rpc";
 
 export type Message = {
   id: string;
@@ -61,24 +61,23 @@ export const useOpenAIAssistant = ({
       if (!sessionId) return;
       
       try {
-        // Use RPC function to load conversation
-        const { data, error } = await supabase.rpc('get_ai_conversation', { 
-          p_session_id: sessionId, 
-          p_assistant_type: assistantType 
-        });
+        const { data: conversations, error } = await supabase
+          .rpc('get_ai_conversation', { 
+            p_session_id: sessionId, 
+            p_assistant_type: assistantType 
+          }) as { data: AIConversation[] | null, error: any };
           
         if (error) {
           console.error("Error loading conversation:", error);
           return;
         }
         
-        if (data && Array.isArray(data) && data.length > 0) {
-          const conversationData = data[0] as AIConversation;
+        if (conversations && conversations.length > 0) {
+          const conversationData = conversations[0];
           setThreadId(conversationData.thread_id);
           
-          // Convert the stored messages to our format
           if (conversationData.messages && Array.isArray(conversationData.messages)) {
-            const storedMessages = conversationData.messages.map((msg) => ({
+            const storedMessages = conversationData.messages.map((msg: any) => ({
               id: msg.id,
               role: msg.role as "user" | "assistant",
               content: msg.content,

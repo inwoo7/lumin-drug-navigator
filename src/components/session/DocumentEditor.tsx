@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,21 +6,13 @@ import { Separator } from "@/components/ui/separator";
 import { Download, FileText, AlertTriangle, Check, Save } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { SessionDocument } from "@/types/supabase-rpc";
 
 interface DocumentEditorProps {
   drugName: string;
   sessionId?: string;
   onContentChange: (content: string) => void;
   initialContent?: string;
-}
-
-// Define the type for our session document
-interface SessionDocument {
-  id: string;
-  content: string;
-  session_id: string;
-  created_at: string;
-  updated_at: string;
 }
 
 const DocumentEditor = ({ 
@@ -36,31 +27,28 @@ const DocumentEditor = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load document content from database or use initial content
   useEffect(() => {
     const loadDocument = async () => {
       if (!sessionId) {
-        // Use template for new sessions
         initializeWithTemplate();
         return;
       }
       
       try {
-        // Check if we have a document in the database
-        const { data, error } = await supabase.rpc('get_session_document', { 
-          p_session_id: sessionId 
-        });
+        const { data: docs, error } = await supabase
+          .rpc('get_session_document', { 
+            p_session_id: sessionId 
+          }) as { data: SessionDocument[] | null, error: any };
           
         if (error) {
           console.error("Error loading document:", error);
-          // Use initial content or template if error occurs
           if (initialContent) {
             setContent(initialContent);
           } else {
             initializeWithTemplate();
           }
-        } else if (data && Array.isArray(data) && data.length > 0 && data[0]?.content) {
-          setContent(data[0].content);
+        } else if (docs && docs.length > 0 && docs[0]?.content) {
+          setContent(docs[0].content);
         } else if (initialContent) {
           setContent(initialContent);
         } else {
@@ -70,7 +58,6 @@ const DocumentEditor = ({
         setIsLoaded(true);
       } catch (err) {
         console.error("Error loading document:", err);
-        // Fallback to template
         initializeWithTemplate();
       }
     };
@@ -79,7 +66,6 @@ const DocumentEditor = ({
   }, [sessionId, initialContent]);
 
   const initializeWithTemplate = () => {
-    // Initialize with a template
     const template = `# ${drugName} Shortage Management Plan
 
 ## Overview
@@ -110,8 +96,6 @@ const DocumentEditor = ({
   useEffect(() => {
     if (!isLoaded) return;
     
-    // Simple markdown-to-html conversion for preview
-    // In a real app, you would use a proper markdown library
     const htmlContent = content
       .replace(/^# (.*$)/gm, '<h1 class="text-2xl font-bold mb-4 mt-6">$1</h1>')
       .replace(/^## (.*$)/gm, '<h2 class="text-xl font-semibold mb-3 mt-5">$1</h2>')
@@ -135,11 +119,11 @@ const DocumentEditor = ({
     setIsSaving(true);
     
     try {
-      // Use a custom RPC function to handle saving document
-      const { error } = await supabase.rpc('save_session_document', { 
+      const { error } = await supabase
+        .rpc('save_session_document', { 
           p_session_id: sessionId,
           p_content: content
-      });
+        });
         
       if (error) throw error;
       
@@ -155,8 +139,6 @@ const DocumentEditor = ({
   };
 
   const handleExportPDF = () => {
-    // In a real application, you would generate a PDF here
-    // For now, we'll just show a toast
     toast.success("Document exported as PDF", {
       description: "Your document has been exported successfully.",
       icon: <Check className="h-4 w-4" />,
