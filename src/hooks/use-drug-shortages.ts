@@ -250,7 +250,7 @@ export const useSession = (sessionId: string | undefined) => {
 // New function to create a session
 export const createSession = async (drugName: string) => {
   try {
-    const { user } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
     
     const { data, error } = await supabase
       .from('search_sessions')
