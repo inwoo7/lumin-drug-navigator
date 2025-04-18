@@ -46,8 +46,7 @@ export const useOpenAIAssistant = ({
           .rpc('get_ai_conversation', { 
             p_session_id: sessionId, 
             p_assistant_type: assistantType 
-          })
-          .single();
+          });
           
         if (error) {
           if (error.code !== 'PGRST116') { // PGRST116 is the "not found" error
@@ -56,11 +55,12 @@ export const useOpenAIAssistant = ({
           return;
         }
         
-        if (data) {
-          setThreadId(data.thread_id);
+        if (data && data.length > 0) {
+          const conversationData = data[0];
+          setThreadId(conversationData.thread_id);
           
           // Convert the stored messages to our format
-          const storedMessages = data.messages.map((msg: any) => ({
+          const storedMessages = conversationData.messages.map((msg: any) => ({
             id: msg.id,
             role: msg.role,
             content: msg.content,

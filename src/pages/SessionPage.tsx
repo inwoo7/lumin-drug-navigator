@@ -100,8 +100,7 @@ const SessionPage = () => {
       try {
         // Using RPC instead of direct table access
         const { data, error } = await supabase
-          .rpc('get_session_document', { p_session_id: sessionId })
-          .single();
+          .rpc('get_session_document', { p_session_id: sessionId });
           
         if (error) {
           if (error.code !== 'PGRST116') { // PGRST116 is the "not found" error
@@ -110,8 +109,8 @@ const SessionPage = () => {
           return;
         }
         
-        if (data && data.content) {
-          setDocumentContent(data.content);
+        if (data && data.length > 0 && data[0].content) {
+          setDocumentContent(data[0].content);
         }
       } catch (err) {
         console.error("Error loading document:", err);

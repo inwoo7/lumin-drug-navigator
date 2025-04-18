@@ -38,10 +38,9 @@ const DocumentEditor = ({
       
       try {
         // Check if we have a document in the database
-        // Use raw query since types don't include our new tables yet
+        // Use RPC function since types don't include our new tables yet
         const { data, error } = await supabase
-          .rpc('get_session_document', { p_session_id: sessionId })
-          .single();
+          .rpc('get_session_document', { p_session_id: sessionId });
           
         if (error) {
           if (error.code !== 'PGRST116') { // PGRST116 is the "not found" error
@@ -53,8 +52,8 @@ const DocumentEditor = ({
           } else {
             initializeWithTemplate();
           }
-        } else if (data && data.content) {
-          setContent(data.content);
+        } else if (data && data.length > 0 && data[0].content) {
+          setContent(data[0].content);
         } else if (initialContent) {
           setContent(initialContent);
         } else {
