@@ -68,16 +68,14 @@ const SessionPage = () => {
       setIsInitialLoading(true);
       
       try {
+        console.log("Preloading session data and document...");
+        
         // Load document first
         await loadDocument();
         
-        console.log("Preloading session data completed");
-        
         // Then set loading to false to display the page
-        setTimeout(() => {
-          // Small delay to ensure all data is loaded (including conversations)
-          setIsInitialLoading(false);
-        }, 500);
+        setIsInitialLoading(false);
+        console.log("Session preloading complete, ready to render UI");
       } catch (err) {
         console.error("Error preloading session:", err);
         setIsInitialLoading(false);
@@ -185,10 +183,13 @@ const SessionPage = () => {
     // Exit early if:
     // 1. We don't have a sessionId
     // 2. We've already tried loading (prevents double loads)
-    if (!sessionId || docLoadAttempted) return;
+    if (!sessionId || docLoadAttempted) {
+      console.log("Skipping document load: session ID missing or already attempted");
+      return;
+    }
     
     try {
-      console.log("Attempting to load document from database...");
+      console.log(`Attempting to load document for session ${sessionId}...`);
       setDocLoadAttempted(true); // Mark as attempted immediately to prevent double loads
       
       const { data: docs, error } = await supabase
@@ -202,7 +203,7 @@ const SessionPage = () => {
       }
       
       if (docs && docs.length > 0 && docs[0]?.content) {
-        console.log("Loaded document from database");
+        console.log("Loaded document from database with length:", docs[0].content.length);
         setDocumentContent(docs[0].content);
         setIsDocumentGenerated(true);
         setIsDocumentInitializing(false);
@@ -213,9 +214,10 @@ const SessionPage = () => {
             .from('search_sessions')
             .update({ has_document: true })
             .eq('id', sessionId);
+          console.log("Updated session record to indicate document exists");
         }
       } else {
-        console.log("No document found in database");
+        console.log("No document found in database for this session");
       }
     } catch (err) {
       console.error("Error loading document:", err);
@@ -281,16 +283,6 @@ const SessionPage = () => {
       // Save document if we have one
       if (documentContent && sessionId) {
         await saveDocument(documentContent);
-        
-        // Force a save of conversations by triggering a message save
-        // This ensures all chat messages are also saved
-        if (documentAssistant && documentAssistant.threadId) {
-          console.log("Explicitly saving document assistant conversation");
-          // Use the save mechanism in the hook
-          if (typeof documentAssistant.saveConversation === 'function') {
-            await documentAssistant.saveConversation();
-          }
-        }
         
         toast.success("Session saved successfully", {
           description: "All your work has been saved."

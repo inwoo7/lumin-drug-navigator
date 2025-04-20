@@ -50,7 +50,7 @@ export const useOpenAIAssistant = ({
       if (!sessionId) return;
       
       try {
-        console.log(`Loading ${assistantType} conversation for session ${sessionId}...`);
+        console.log(`Attempting to load conversation for session ${sessionId}, assistant type: ${assistantType}`);
         
         const { data: conversations, error } = await supabase
           .rpc('get_ai_conversation', { 
@@ -63,40 +63,66 @@ export const useOpenAIAssistant = ({
           return;
         }
         
-        console.log(`Retrieved ${conversations?.length || 0} conversations for ${assistantType}`);
+        console.log(`Loaded conversations data:`, conversations);
         
         if (conversations && conversations.length > 0) {
           const conversationData = conversations[0];
           setThreadId(conversationData.thread_id);
-          console.log(`Found thread ID: ${conversationData.thread_id}`);
+          console.log(`Set thread ID to ${conversationData.thread_id}`);
           
-          if (conversationData.messages && Array.isArray(conversationData.messages)) {
-            console.log(`Found ${conversationData.messages.length} messages`);
+          // Handle various possible message formats
+          if (conversationData.messages) {
+            let messagesArray;
             
-            // Create properly formatted message objects
-            const storedMessages = conversationData.messages.map((msg: any) => ({
-              id: msg.id || Date.now().toString(),  // Ensure we have an ID
-              role: msg.role as "user" | "assistant",
-              content: msg.content,
-              timestamp: new Date(msg.timestamp)
-            }));
+            // Handle string JSON
+            if (typeof conversationData.messages === 'string') {
+              try {
+                messagesArray = JSON.parse(conversationData.messages);
+              } catch (e) {
+                console.error("Failed to parse messages JSON string:", e);
+                messagesArray = [];
+              }
+            } 
+            // Handle JSONB/object
+            else if (typeof conversationData.messages === 'object') {
+              messagesArray = Array.isArray(conversationData.messages) 
+                ? conversationData.messages 
+                : [];
+            } else {
+              messagesArray = [];
+            }
             
-            console.log("Setting messages in state:", storedMessages.length);
-            setMessages(storedMessages);
-            setIsInitialized(true);
+            console.log(`Processing ${messagesArray.length} stored messages`);
             
-            // Skip auto-initialization if we loaded messages from DB
-            if (storedMessages.length > 0) {
-              console.log(`Restored ${storedMessages.length} messages for ${assistantType} conversation`);
-              setHasAttemptedGeneration(true);
-              setIsRestoredSession(true);
-              setShouldSendRawData(false); // Don't send raw data for restored sessions
+            if (messagesArray.length > 0) {
+              const storedMessages = messagesArray.map((msg: any) => ({
+                id: msg.id || Date.now().toString(),
+                role: msg.role as "user" | "assistant",
+                content: msg.content,
+                timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
+              }));
+              
+              console.log(`Processed ${storedMessages.length} messages to display`);
+              
+              // Set messages from database
+              setMessages(storedMessages);
+              setIsInitialized(true);
+              
+              // Skip auto-initialization if we loaded messages from DB
+              if (storedMessages.length > 0) {
+                setHasAttemptedGeneration(true);
+                setIsRestoredSession(true);
+                setShouldSendRawData(false); // Don't send raw data for restored sessions
+                console.log(`Session restored with ${storedMessages.length} messages`);
+              }
+            } else {
+              console.log("No messages found in the conversation data");
             }
           } else {
-            console.log("No messages found in conversation data or invalid format");
+            console.log("No messages array in conversation data");
           }
         } else {
-          console.log(`No existing ${assistantType} conversations found for this session`);
+          console.log(`No conversation found for session ${sessionId} and assistant type ${assistantType}`);
         }
       } catch (err) {
         console.error("Error loading conversation:", err);
@@ -449,20 +475,23 @@ Format the document in Markdown with clear headings and sections.`;
       setIsLoading(true);
       setError(null);
       
+      // Log request details
+      console.log(`Sending message for ${assistantType} assistant. Document edit: ${content.includes("Please edit")}`);
+      
       // Create a new message for UI
       const userMessage = addMessage("user", content);
       
-      // Prepare request payload
-      const messagesForAPI = [{
-        role: "user",
-        content
-      }];
+      // Check if this is a document edit request
+      const isDocEdit = (assistantType === "document" && 
+        (content.includes("Please edit the document") || 
+         content.includes("update the document") || 
+         content.includes("change the document")));
       
       // For document editing, ensure the LLM has context of the current document
       let contextualContent = content;
-      const isDocEdit = content.includes("Please edit the document with the following instructions:");
       
       if (isDocEdit && documentContent) {
+        console.log("Adding document content context to edit request");
         contextualContent = `${content}\n\nCurrent document content:\n\n${documentContent}`;
       }
       
@@ -476,7 +505,7 @@ Format the document in Markdown with clear headings and sections.`;
           }],
           drugData: drugShortageData,
           allShortageData: allShortageData || [],
-          documentContent,
+          documentContent: isDocEdit ? documentContent : undefined, // Only send document when editing
           sessionId,
           threadId,
           rawData: false, // Never send raw data for regular messages
@@ -516,14 +545,16 @@ Format the document in Markdown with clear headings and sections.`;
       if (data && data.message) {
         const assistantMessage = addMessage("assistant", data.message);
         
+        // For document edits, update the document
         if (assistantType === "document" && onDocumentUpdate && isDocEdit) {
+          console.log("Document edit detected, updating document content");
           onDocumentUpdate(data.message);
         }
         
         // Save conversation after adding new messages
         saveConversation([userMessage, assistantMessage]);
         
-      return data.message;
+        return data.message;
       } else {
         // Fallback message if no response
         const fallbackMessage = addMessage("assistant", "I'm sorry, I wasn't able to generate a proper response. Please try rephrasing your question.");
@@ -544,30 +575,16 @@ Format the document in Markdown with clear headings and sections.`;
 
   // Helper function to save conversation to database
   const saveConversation = async (newMessages?: Message[]) => {
-    if (!sessionId) {
-      console.log("Cannot save conversation: No sessionId provided");
-      return;
-    }
-    
-    if (!threadId) {
-      console.log("Cannot save conversation: No threadId available");
-      return;
-    }
+    if (!sessionId || !threadId) return;
     
     try {
       // Prepare the full message list to save (include new messages if provided)
       const allMessages = newMessages 
-        ? [...messages, ...newMessages.filter(msg => 
-            // Only add messages that aren't already in the list (prevent duplicates)
-            !messages.some(existingMsg => existingMsg.id === msg.id)
-          )]
+        ? [...messages, ...newMessages]
         : messages;
       
       // Skip saving if there are no messages
-      if (allMessages.length === 0) {
-        console.log("No messages to save");
-        return;
-      }
+      if (allMessages.length === 0) return;
       
       // Format messages for database storage
       const formattedMessages = allMessages.map(msg => ({
@@ -577,36 +594,87 @@ Format the document in Markdown with clear headings and sections.`;
         timestamp: msg.timestamp.toISOString()
       }));
       
-      console.log(`Saving ${formattedMessages.length} messages for ${assistantType} conversation`);
-      
       // Save to database
-      const { error } = await supabase.rpc('save_ai_conversation', {
+      await supabase.rpc('save_ai_conversation', {
         p_session_id: sessionId,
         p_assistant_type: assistantType,
         p_thread_id: threadId,
         p_messages: JSON.stringify(formattedMessages)
       });
       
-      if (error) {
-        console.error("Error saving conversation:", error);
-        return;
-      }
-      
-      console.log(`Successfully saved ${formattedMessages.length} messages for ${assistantType} conversation`);
+      console.log(`Saved ${formattedMessages.length} messages for ${assistantType} conversation`);
     } catch (saveErr) {
       console.error("Error saving conversation:", saveErr);
     }
   };
 
-  // Also save conversation when component unmounts to ensure nothing is lost
-  useEffect(() => {
-    return () => {
-      if (messages.length > 0 && sessionId && threadId) {
-        console.log(`Saving ${messages.length} messages on unmount`);
-        saveConversation();
+  // Utility function to debug saved conversation state
+  const loadMessages = async () => {
+    if (!sessionId) {
+      console.log("Cannot load messages without a session ID");
+      return;
+    }
+    
+    try {
+      console.log(`Attempting to load conversation for debug: ${sessionId}, ${assistantType}`);
+      
+      const { data, error } = await supabase
+        .rpc('get_ai_conversation', { 
+          p_session_id: sessionId, 
+          p_assistant_type: assistantType 
+        });
+        
+      if (error) {
+        console.error("Debug loading error:", error);
+        return;
       }
-    };
-  }, [messages, sessionId, threadId]); // eslint-disable-line react-hooks/exhaustive-deps
+      
+      console.log("Debug conversation data:", data);
+      
+      if (data && data.length > 0) {
+        console.log("Thread ID:", data[0].thread_id);
+        console.log("Messages:", data[0].messages);
+        
+        // Check messages format
+        if (typeof data[0].messages === 'string') {
+          try {
+            const parsed = JSON.parse(data[0].messages);
+            console.log("Parsed messages:", parsed);
+            
+            // If there are messages and we don't have any loaded, use them
+            if (Array.isArray(parsed) && parsed.length > 0 && messages.length === 0) {
+              console.log("Setting messages from debug load");
+              
+              const formattedMessages = parsed.map((msg: any) => ({
+                id: msg.id || Date.now().toString(),
+                role: msg.role as "user" | "assistant",
+                content: msg.content,
+                timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
+              }));
+              
+              setMessages(formattedMessages);
+              setIsInitialized(true);
+              setIsRestoredSession(true);
+            }
+          } catch (e) {
+            console.error("Failed to parse debug messages:", e);
+          }
+        }
+      } else {
+        console.log("No debug conversation data found");
+      }
+    } catch (err) {
+      console.error("Debug loading error:", err);
+    }
+  };
+  
+  // If no messages were loaded but we have a session, try debug load
+  useEffect(() => {
+    if (sessionId && isInitialized && messages.length === 0) {
+      console.log("No messages loaded but session exists, trying debug load");
+      loadMessages();
+    }
+  }, [sessionId, isInitialized, messages.length]);
 
   return {
     messages,
@@ -616,6 +684,5 @@ Format the document in Markdown with clear headings and sections.`;
     addMessage,
     isInitialized,
     threadId,
-    saveConversation,
   };
 };

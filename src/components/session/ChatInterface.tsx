@@ -66,22 +66,17 @@ const ChatInterface = ({
     drugShortageData: report,
     allShortageData: shortages,
     documentContent,
-    // Only initialize if we actually have the report data
-    // This prevents unnecessary initializations when reopening sessions
-    autoInitialize: !!report && sessionId !== undefined,
+    autoInitialize: true,
     onDocumentUpdate: sessionType === "document" ? onSendToDocument : undefined,
-    // Only attempt document generation for document-type sessions with report data
-    generateDocument: sessionType === "document" && !!report,
-    // Only send raw API data for new sessions (avoids sending large data unnecessarily)
-    rawApiData: !!report && sessionId !== undefined
+    generateDocument: sessionType === "document", // Always attempt to generate document when in document mode
+    rawApiData: false // Only send raw data on first initialization, not when restoring sessions
   });
   
   // Add initial assistant message when chat first loads if not initialized and no messages
   useEffect(() => {
-    // Only add a welcome message if there are no messages yet
-    // This avoids adding duplicate welcome messages when restoring a session
+    // Only add a welcome message if there are no messages AND the assistant is initialized
     if (messages.length === 0 && !isReportLoading && !isAILoading && isInitialized) {
-      console.log(`Adding initial ${sessionType} welcome message, no existing messages found`);
+      console.log(`Adding welcome message for ${sessionType} assistant`);
       let initialMessage = "";
       
       if (sessionType === "info") {
@@ -118,22 +113,29 @@ const ChatInterface = ({
     // Set the message sending flag to true
     setIsMessageSending(true);
     
-    // Special handling for document edit mode
-    if (sessionType === "document" && isEditMode) {
+    // Document editing - detect if user wants to edit the document
+    const isEditRequest = sessionType === "document" && 
+      (inputMessage.toLowerCase().includes("edit") || 
+       inputMessage.toLowerCase().includes("update") || 
+       inputMessage.toLowerCase().includes("change") ||
+       inputMessage.toLowerCase().includes("modify") ||
+       isEditMode);
+       
+    // If this looks like a document edit request, format it properly
+    if (isEditRequest) {
       const editingPrompt = `Please edit the document with the following instructions: ${inputMessage}. 
-Return ONLY the complete updated document content.
-
-Current document content:
-${documentContent || "No document content available"}`;
+Return ONLY the complete updated document content.`;
       
-      addMessage("user", inputMessage);
+      const message = inputMessage;
       setInputMessage("");
       
       // Show loading state with specific edit message
       toast.loading("Editing document...", { id: "document-edit" });
       
       try {
+        console.log("Sending document edit request");
         const updatedContent = await sendMessage(editingPrompt);
+        
         if (updatedContent && onSendToDocument) {
           onSendToDocument(updatedContent);
           toast.success("Document updated successfully", { id: "document-edit" });
@@ -145,9 +147,9 @@ ${documentContent || "No document content available"}`;
         toast.error("Failed to update document", { id: "document-edit" });
       } finally {
         setIsMessageSending(false);
+        setIsEditMode(false);
       }
       
-      setIsEditMode(false);
       return;
     }
     
@@ -155,6 +157,7 @@ ${documentContent || "No document content available"}`;
     const message = inputMessage;
     setInputMessage("");
     try {
+      console.log(`Sending standard message in ${sessionType} mode`);
       await sendMessage(message);
     } catch (error) {
       console.error("Error sending message:", error);
@@ -181,47 +184,11 @@ ${documentContent || "No document content available"}`;
     }
   };
 
-  // This function is used to send message content to the document
+  // This function is kept for backward compatibility but the automatic update is now preferred
   const handleSendToDoc = (content: string) => {
-    console.log("Sending content to document:", content.substring(0, 50) + "...");
-    
     if (onSendToDocument) {
-      // Check if content looks like a full document (has headings, etc.)
-      const looksLikeDocument = 
-        content.includes("# ") || // Markdown headings
-        content.includes("## ") ||
-        (content.length > 500 && content.includes("\n\n")); // Long content with paragraphs
-        
-      if (looksLikeDocument) {
-        onSendToDocument(content);
-        toast.success("Document updated");
-      } else {
-        // If it doesn't look like a document, generate one based on the message
-        const prompt = `Please generate a complete document based on the following information:
-${content}
-
-Current document content:
-${documentContent || "No existing document content."}
-
-Return the complete updated document with all sections properly formatted.`;
-        
-        toast.loading("Generating updated document...", { id: "doc-update" });
-        
-        // Send the generation prompt
-        sendMessage(prompt)
-          .then(generatedDoc => {
-            if (generatedDoc && onSendToDocument) {
-              onSendToDocument(generatedDoc);
-              toast.success("Document updated successfully", { id: "doc-update" });
-            } else {
-              toast.error("Failed to update document", { id: "doc-update" });
-            }
-          })
-          .catch(err => {
-            console.error("Error generating document:", err);
-            toast.error("Failed to update document", { id: "doc-update" });
-          });
-      }
+      onSendToDocument(content);
+      toast.success("Document updated");
     }
   };
 
