@@ -66,22 +66,22 @@ const ChatInterface = ({
     drugShortageData: report,
     allShortageData: shortages,
     documentContent,
-    autoInitialize: true,
+    // Only initialize if we actually have the report data
+    // This prevents unnecessary initializations when reopening sessions
+    autoInitialize: !!report && sessionId !== undefined,
     onDocumentUpdate: sessionType === "document" ? onSendToDocument : undefined,
-    generateDocument: sessionType === "document", // Always attempt to generate document when in document mode
-    rawApiData: true // Keep existing parameter that the hook expects
+    // Only attempt document generation for document-type sessions with report data
+    generateDocument: sessionType === "document" && !!report,
+    // Only send raw API data for new sessions (avoids sending large data unnecessarily)
+    rawApiData: !!report && sessionId !== undefined
   });
   
   // Add initial assistant message when chat first loads if not initialized and no messages
   useEffect(() => {
-    // Only add welcome message if:
-    // 1. We have no messages
-    // 2. The report data is loaded (not loading)
-    // 3. The AI is not currently loading
-    // 4. The assistant is initialized
+    // Only add a welcome message if there are no messages yet
+    // This avoids adding duplicate welcome messages when restoring a session
     if (messages.length === 0 && !isReportLoading && !isAILoading && isInitialized) {
-      console.log("Adding welcome message for", assistantType);
-      
+      console.log(`Adding initial ${sessionType} welcome message, no existing messages found`);
       let initialMessage = "";
       
       if (sessionType === "info") {
@@ -92,8 +92,6 @@ const ChatInterface = ({
       
       // Only add this intro message if we don't have any messages yet
       addMessage("assistant", initialMessage);
-    } else {
-      console.log(`Not adding welcome message: messages=${messages.length}, isInitialized=${isInitialized}`);
     }
   }, [drugName, sessionType, messages.length, isInitialized, isReportLoading, isAILoading, addMessage]);
 
@@ -126,7 +124,7 @@ const ChatInterface = ({
 Return ONLY the complete updated document content.
 
 Current document content:
-${documentContent || "No document content available yet."}`;
+${documentContent || "No document content available"}`;
       
       addMessage("user", inputMessage);
       setInputMessage("");
@@ -183,11 +181,47 @@ ${documentContent || "No document content available yet."}`;
     }
   };
 
-  // This function is kept for backward compatibility but the automatic update is now preferred
+  // This function is used to send message content to the document
   const handleSendToDoc = (content: string) => {
+    console.log("Sending content to document:", content.substring(0, 50) + "...");
+    
     if (onSendToDocument) {
-      onSendToDocument(content);
-      toast.success("Document updated");
+      // Check if content looks like a full document (has headings, etc.)
+      const looksLikeDocument = 
+        content.includes("# ") || // Markdown headings
+        content.includes("## ") ||
+        (content.length > 500 && content.includes("\n\n")); // Long content with paragraphs
+        
+      if (looksLikeDocument) {
+        onSendToDocument(content);
+        toast.success("Document updated");
+      } else {
+        // If it doesn't look like a document, generate one based on the message
+        const prompt = `Please generate a complete document based on the following information:
+${content}
+
+Current document content:
+${documentContent || "No existing document content."}
+
+Return the complete updated document with all sections properly formatted.`;
+        
+        toast.loading("Generating updated document...", { id: "doc-update" });
+        
+        // Send the generation prompt
+        sendMessage(prompt)
+          .then(generatedDoc => {
+            if (generatedDoc && onSendToDocument) {
+              onSendToDocument(generatedDoc);
+              toast.success("Document updated successfully", { id: "doc-update" });
+            } else {
+              toast.error("Failed to update document", { id: "doc-update" });
+            }
+          })
+          .catch(err => {
+            console.error("Error generating document:", err);
+            toast.error("Failed to update document", { id: "doc-update" });
+          });
+      }
     }
   };
 

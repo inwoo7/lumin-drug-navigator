@@ -71,8 +71,13 @@ const SessionPage = () => {
         // Load document first
         await loadDocument();
         
+        console.log("Preloading session data completed");
+        
         // Then set loading to false to display the page
-        setIsInitialLoading(false);
+        setTimeout(() => {
+          // Small delay to ensure all data is loaded (including conversations)
+          setIsInitialLoading(false);
+        }, 500);
       } catch (err) {
         console.error("Error preloading session:", err);
         setIsInitialLoading(false);
@@ -277,16 +282,21 @@ const SessionPage = () => {
       if (documentContent && sessionId) {
         await saveDocument(documentContent);
         
-        // Force the conversation saving by calling the saveConversation function
-        // of both LLM instances 
-        // Note: This isn't directly possible, so we'll add a message to tell users that
-        // conversations are automatically saved
+        // Force a save of conversations by triggering a message save
+        // This ensures all chat messages are also saved
+        if (documentAssistant && documentAssistant.threadId) {
+          console.log("Explicitly saving document assistant conversation");
+          // Use the save mechanism in the hook
+          if (typeof documentAssistant.saveConversation === 'function') {
+            await documentAssistant.saveConversation();
+          }
+        }
         
         toast.success("Session saved successfully", {
-          description: "Document content saved. Chat conversations are automatically saved as you chat."
+          description: "All your work has been saved."
         });
       } else {
-        toast.info("Chat conversations are automatically saved as you chat");
+        toast.info("No document to save");
       }
     } catch (err) {
       console.error("Error saving session:", err);

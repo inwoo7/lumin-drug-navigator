@@ -63,52 +63,40 @@ export const useOpenAIAssistant = ({
           return;
         }
         
-        console.log(`Retrieved conversations:`, conversations);
+        console.log(`Retrieved ${conversations?.length || 0} conversations for ${assistantType}`);
         
         if (conversations && conversations.length > 0) {
           const conversationData = conversations[0];
-          console.log(`Found conversation with thread ID ${conversationData.thread_id}`);
           setThreadId(conversationData.thread_id);
+          console.log(`Found thread ID: ${conversationData.thread_id}`);
           
-          // The message format might be different depending on how it was saved
-          // It could be a string that needs parsing or already a parsed object
-          let messageArray = conversationData.messages;
-          
-          // Parse if it's a string
-          if (typeof conversationData.messages === 'string') {
-            try {
-              messageArray = JSON.parse(conversationData.messages);
-            } catch (parseErr) {
-              console.error("Error parsing message JSON:", parseErr);
-              messageArray = [];
-            }
-          }
-          
-          if (messageArray && Array.isArray(messageArray)) {
-            console.log(`Loaded ${messageArray.length} messages`);
+          if (conversationData.messages && Array.isArray(conversationData.messages)) {
+            console.log(`Found ${conversationData.messages.length} messages`);
             
-            const storedMessages = messageArray.map((msg: any) => ({
-              id: msg.id || Date.now().toString() + Math.random().toString(),
+            // Create properly formatted message objects
+            const storedMessages = conversationData.messages.map((msg: any) => ({
+              id: msg.id || Date.now().toString(),  // Ensure we have an ID
               role: msg.role as "user" | "assistant",
               content: msg.content,
               timestamp: new Date(msg.timestamp)
             }));
             
-            console.log("Setting stored messages:", storedMessages);
+            console.log("Setting messages in state:", storedMessages.length);
+            setMessages(storedMessages);
+            setIsInitialized(true);
             
-            // Only set messages if we actually have some
+            // Skip auto-initialization if we loaded messages from DB
             if (storedMessages.length > 0) {
-              setMessages(storedMessages);
-              setIsInitialized(true);
+              console.log(`Restored ${storedMessages.length} messages for ${assistantType} conversation`);
               setHasAttemptedGeneration(true);
               setIsRestoredSession(true);
               setShouldSendRawData(false); // Don't send raw data for restored sessions
             }
           } else {
-            console.warn("No messages found in conversation data or invalid format");
+            console.log("No messages found in conversation data or invalid format");
           }
         } else {
-          console.log(`No existing ${assistantType} conversation found for session ${sessionId}`);
+          console.log(`No existing ${assistantType} conversations found for this session`);
         }
       } catch (err) {
         console.error("Error loading conversation:", err);
@@ -464,13 +452,19 @@ Format the document in Markdown with clear headings and sections.`;
       // Create a new message for UI
       const userMessage = addMessage("user", content);
       
-      // Check if this is a document edit request
-      const isDocEdit = content.includes("Please edit the document with the following instructions:");
+      // Prepare request payload
+      const messagesForAPI = [{
+        role: "user",
+        content
+      }];
       
       // For document editing, ensure the LLM has context of the current document
-      // (note: we now include this in the prompt from ChatInterface, but we're
-      // ensuring it's also included in the API call)
       let contextualContent = content;
+      const isDocEdit = content.includes("Please edit the document with the following instructions:");
+      
+      if (isDocEdit && documentContent) {
+        contextualContent = `${content}\n\nCurrent document content:\n\n${documentContent}`;
+      }
       
       // Make the API call
       const { data, error } = await supabase.functions.invoke("openai-assistant", {
@@ -482,7 +476,7 @@ Format the document in Markdown with clear headings and sections.`;
           }],
           drugData: drugShortageData,
           allShortageData: allShortageData || [],
-          documentContent, // Always include current document content
+          documentContent,
           sessionId,
           threadId,
           rawData: false, // Never send raw data for regular messages
@@ -550,16 +544,30 @@ Format the document in Markdown with clear headings and sections.`;
 
   // Helper function to save conversation to database
   const saveConversation = async (newMessages?: Message[]) => {
-    if (!sessionId || !threadId) return;
+    if (!sessionId) {
+      console.log("Cannot save conversation: No sessionId provided");
+      return;
+    }
+    
+    if (!threadId) {
+      console.log("Cannot save conversation: No threadId available");
+      return;
+    }
     
     try {
       // Prepare the full message list to save (include new messages if provided)
       const allMessages = newMessages 
-        ? [...messages, ...newMessages]
+        ? [...messages, ...newMessages.filter(msg => 
+            // Only add messages that aren't already in the list (prevent duplicates)
+            !messages.some(existingMsg => existingMsg.id === msg.id)
+          )]
         : messages;
       
       // Skip saving if there are no messages
-      if (allMessages.length === 0) return;
+      if (allMessages.length === 0) {
+        console.log("No messages to save");
+        return;
+      }
       
       // Format messages for database storage
       const formattedMessages = allMessages.map(msg => ({
@@ -569,19 +577,36 @@ Format the document in Markdown with clear headings and sections.`;
         timestamp: msg.timestamp.toISOString()
       }));
       
+      console.log(`Saving ${formattedMessages.length} messages for ${assistantType} conversation`);
+      
       // Save to database
-      await supabase.rpc('save_ai_conversation', {
+      const { error } = await supabase.rpc('save_ai_conversation', {
         p_session_id: sessionId,
         p_assistant_type: assistantType,
         p_thread_id: threadId,
         p_messages: JSON.stringify(formattedMessages)
       });
       
-      console.log(`Saved ${formattedMessages.length} messages for ${assistantType} conversation`);
+      if (error) {
+        console.error("Error saving conversation:", error);
+        return;
+      }
+      
+      console.log(`Successfully saved ${formattedMessages.length} messages for ${assistantType} conversation`);
     } catch (saveErr) {
       console.error("Error saving conversation:", saveErr);
     }
   };
+
+  // Also save conversation when component unmounts to ensure nothing is lost
+  useEffect(() => {
+    return () => {
+      if (messages.length > 0 && sessionId && threadId) {
+        console.log(`Saving ${messages.length} messages on unmount`);
+        saveConversation();
+      }
+    };
+  }, [messages, sessionId, threadId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
     messages,
@@ -591,5 +616,6 @@ Format the document in Markdown with clear headings and sections.`;
     addMessage,
     isInitialized,
     threadId,
+    saveConversation,
   };
 };
