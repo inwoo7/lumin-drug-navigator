@@ -49,9 +49,9 @@ export const useOpenAIAssistant = ({
     const loadConversation = async () => {
       if (!sessionId) return;
       
-      console.log(`Loading conversation for ${assistantType} assistant with session ID: ${sessionId}`);
-      
       try {
+        console.log(`Loading ${assistantType} conversation for session ${sessionId}...`);
+        
         const { data: conversations, error } = await supabase
           .rpc('get_ai_conversation', { 
             p_session_id: sessionId, 
@@ -63,53 +63,58 @@ export const useOpenAIAssistant = ({
           return;
         }
         
-        console.log(`Retrieved conversation data for ${assistantType}:`, conversations);
+        console.log(`Retrieved conversations:`, conversations);
         
         if (conversations && conversations.length > 0) {
           const conversationData = conversations[0];
-          console.log(`Found conversation with thread ID: ${conversationData.thread_id}`);
+          console.log(`Found conversation with thread ID ${conversationData.thread_id}`);
           setThreadId(conversationData.thread_id);
           
-          if (conversationData.messages && Array.isArray(conversationData.messages)) {
-            // Parse and sort messages by timestamp to ensure correct order
-            const storedMessages = conversationData.messages
-              .map((msg: any) => ({
-                id: msg.id || Date.now().toString(),
-                role: msg.role as "user" | "assistant",
-                content: msg.content,
-                timestamp: new Date(msg.timestamp)
-              }))
-              .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+          // The message format might be different depending on how it was saved
+          // It could be a string that needs parsing or already a parsed object
+          let messageArray = conversationData.messages;
+          
+          // Parse if it's a string
+          if (typeof conversationData.messages === 'string') {
+            try {
+              messageArray = JSON.parse(conversationData.messages);
+            } catch (parseErr) {
+              console.error("Error parsing message JSON:", parseErr);
+              messageArray = [];
+            }
+          }
+          
+          if (messageArray && Array.isArray(messageArray)) {
+            console.log(`Loaded ${messageArray.length} messages`);
             
-            console.log(`Loaded ${storedMessages.length} messages for ${assistantType} conversation`);
+            const storedMessages = messageArray.map((msg: any) => ({
+              id: msg.id || Date.now().toString() + Math.random().toString(),
+              role: msg.role as "user" | "assistant",
+              content: msg.content,
+              timestamp: new Date(msg.timestamp)
+            }));
             
+            console.log("Setting stored messages:", storedMessages);
+            
+            // Only set messages if we actually have some
             if (storedMessages.length > 0) {
-              console.log("First message:", storedMessages[0]);
-              console.log("Last message:", storedMessages[storedMessages.length - 1]);
-              
-              // Set messages in state
               setMessages(storedMessages);
               setIsInitialized(true);
               setHasAttemptedGeneration(true);
               setIsRestoredSession(true);
               setShouldSendRawData(false); // Don't send raw data for restored sessions
-              
-              console.log(`Successfully restored ${assistantType} conversation with ${storedMessages.length} messages`);
-            } else {
-              console.log(`No messages found in ${assistantType} conversation data`);
             }
           } else {
-            console.log(`No valid messages array in conversation data for ${assistantType}`);
+            console.warn("No messages found in conversation data or invalid format");
           }
         } else {
-          console.log(`No existing ${assistantType} conversation found for session ID: ${sessionId}`);
+          console.log(`No existing ${assistantType} conversation found for session ${sessionId}`);
         }
       } catch (err) {
-        console.error(`Error loading ${assistantType} conversation:`, err);
+        console.error("Error loading conversation:", err);
       }
     };
     
-    // Load conversation data as soon as the hook mounts
     loadConversation();
   }, [sessionId, assistantType]);
 
@@ -338,39 +343,39 @@ Format the document in Markdown with clear headings and sections.`;
       }
       
       if (autoInitialize && sessionId && !threadId) {
-        setIsLoading(true);
-        
-        try {
-          const { data, error } = await supabase.functions.invoke("openai-assistant", {
-            body: {
-              assistantType,
-              messages: [],
-              drugData: drugShortageData,
+          setIsLoading(true);
+          
+          try {
+            const { data, error } = await supabase.functions.invoke("openai-assistant", {
+              body: {
+                assistantType,
+                messages: [],
+                drugData: drugShortageData,
               allShortageData: allShortageData || [],
-              documentContent,
-              sessionId,
+                documentContent,
+                sessionId,
               generateDocument: generateDocument || assistantType === "document",
               rawData: shouldSendRawData // Only send raw data for initial document generation
-            },
-          });
-          
-          if (error) {
-            console.error("Error initializing assistant:", error);
+              },
+            });
+            
+            if (error) {
+              console.error("Error initializing assistant:", error);
             toast.error("Failed to initialize AI assistant. Using offline mode.");
-            setError(error.message);
-            return;
-          }
-          
+              setError(error.message);
+              return;
+            }
+            
           if (data && data.error) {
-            console.error("Error from OpenAI assistant:", data.error);
+              console.error("Error from OpenAI assistant:", data.error);
             toast.error(data.error || "Error processing request");
-            setError(data.error);
-            return;
-          }
-          
+              setError(data.error);
+              return;
+            }
+            
           if (data) {
             if (data.threadId) {
-              setThreadId(data.threadId);
+            setThreadId(data.threadId);
             }
             
             if (data.messages && data.messages.length > 0) {
@@ -407,14 +412,14 @@ Format the document in Markdown with clear headings and sections.`;
           
           // After initialization, we don't need to send raw data anymore
           setShouldSendRawData(false);
-          setIsInitialized(true);
+            setIsInitialized(true);
           setHasAttemptedGeneration(true);
-        } catch (err: any) {
-          console.error("Error in initializing assistant:", err);
-          setError(err.message || "An error occurred");
+          } catch (err: any) {
+            console.error("Error in initializing assistant:", err);
+            setError(err.message || "An error occurred");
           toast.error("Failed to initialize AI assistant. Using offline mode.");
-        } finally {
-          setIsLoading(false);
+          } finally {
+            setIsLoading(false);
         }
       }
     };
@@ -460,17 +465,12 @@ Format the document in Markdown with clear headings and sections.`;
       const userMessage = addMessage("user", content);
       
       // Check if this is a document edit request
-      const isDocEdit = content.includes("Please edit the document") || 
-                       (assistantType === "document" && content.includes("update the document"));
+      const isDocEdit = content.includes("Please edit the document with the following instructions:");
       
       // For document editing, ensure the LLM has context of the current document
+      // (note: we now include this in the prompt from ChatInterface, but we're
+      // ensuring it's also included in the API call)
       let contextualContent = content;
-      
-      if (assistantType === "document" && documentContent) {
-        // Always provide document context for the document assistant 
-        contextualContent = `${content}\n\nCurrent document content:\n${documentContent}`;
-        console.log("Sending message with document context");
-      }
       
       // Make the API call
       const { data, error } = await supabase.functions.invoke("openai-assistant", {
@@ -478,11 +478,11 @@ Format the document in Markdown with clear headings and sections.`;
           assistantType,
           messages: [{
             role: "user",
-            content: contextualContent // Send contextual content with document
+            content: contextualContent // Send contextual content with document if needed
           }],
           drugData: drugShortageData,
           allShortageData: allShortageData || [],
-          documentContent,
+          documentContent, // Always include current document content
           sessionId,
           threadId,
           rawData: false, // Never send raw data for regular messages
@@ -522,16 +522,14 @@ Format the document in Markdown with clear headings and sections.`;
       if (data && data.message) {
         const assistantMessage = addMessage("assistant", data.message);
         
-        // Handle document updates
         if (assistantType === "document" && onDocumentUpdate && isDocEdit) {
-          console.log("Document edit request detected, updating document");
           onDocumentUpdate(data.message);
         }
         
         // Save conversation after adding new messages
         saveConversation([userMessage, assistantMessage]);
         
-        return data.message;
+      return data.message;
       } else {
         // Fallback message if no response
         const fallbackMessage = addMessage("assistant", "I'm sorry, I wasn't able to generate a proper response. Please try rephrasing your question.");

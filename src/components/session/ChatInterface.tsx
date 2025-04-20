@@ -74,7 +74,14 @@ const ChatInterface = ({
   
   // Add initial assistant message when chat first loads if not initialized and no messages
   useEffect(() => {
+    // Only add welcome message if:
+    // 1. We have no messages
+    // 2. The report data is loaded (not loading)
+    // 3. The AI is not currently loading
+    // 4. The assistant is initialized
     if (messages.length === 0 && !isReportLoading && !isAILoading && isInitialized) {
+      console.log("Adding welcome message for", assistantType);
+      
       let initialMessage = "";
       
       if (sessionType === "info") {
@@ -85,6 +92,8 @@ const ChatInterface = ({
       
       // Only add this intro message if we don't have any messages yet
       addMessage("assistant", initialMessage);
+    } else {
+      console.log(`Not adding welcome message: messages=${messages.length}, isInitialized=${isInitialized}`);
     }
   }, [drugName, sessionType, messages.length, isInitialized, isReportLoading, isAILoading, addMessage]);
 
@@ -114,7 +123,10 @@ const ChatInterface = ({
     // Special handling for document edit mode
     if (sessionType === "document" && isEditMode) {
       const editingPrompt = `Please edit the document with the following instructions: ${inputMessage}. 
-Return ONLY the complete updated document content.`;
+Return ONLY the complete updated document content.
+
+Current document content:
+${documentContent || "No document content available yet."}`;
       
       addMessage("user", inputMessage);
       setInputMessage("");
