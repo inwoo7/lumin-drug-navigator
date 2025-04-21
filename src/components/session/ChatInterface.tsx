@@ -204,6 +204,17 @@ Return ONLY the complete updated document content.`;
 
   // Format chat message for display
   const formatChatMessage = (content: string) => {
+    // Special handling for document edits - convert full document to a response message
+    if (
+      sessionType === "document" && 
+      content.startsWith("#") && 
+      (content.includes("# Drug Shortage Management Plan") || 
+       content.includes("Executive Summary") || 
+       content.includes("Product Details"))
+    ) {
+      return "I've updated the document according to your instructions. The changes have been applied to the document editor.";
+    }
+    
     // Check if content contains JSON-like structures or API responses
     if (
       content.includes('{"data":') || 
@@ -270,59 +281,56 @@ Return ONLY the complete updated document content.`;
                     : "bg-gray-100 text-gray-800"
                 }`}
               >
-                {message.role === "assistant" ? (
-                  <div className="prose prose-sm max-w-none prose-headings:font-semibold prose-p:my-2 prose-ul:my-2 prose-li:my-0 prose-pre:bg-gray-100 prose-pre:p-2 prose-pre:rounded prose-pre:text-sm prose-code:text-gray-800 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded">
-                    <div className="markdown-content">
+                <div className="prose prose-sm max-w-none">
+                  {message.role === "assistant" ? (
+                    <>
                       <ReactMarkdown>
                         {formatChatMessage(message.content)}
                       </ReactMarkdown>
-                    </div>
-                    
-                    <div className="flex justify-end gap-1 mt-2">
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              onClick={() => handleCopyMessage(message.content)}
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 w-7 p-0"
-                            >
-                              <Copy className="h-3 w-3" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Copy to clipboard</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
                       
-                      {sessionType === "document" && onSendToDocument && (
+                      <div className="flex justify-end gap-1 mt-2">
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <IconButton
-                                onClick={() => handleSendToDoc(message.content)}
+                              <Button
+                                onClick={() => handleCopyMessage(message.content)}
                                 size="sm"
                                 variant="ghost"
                                 className="h-7 w-7 p-0"
                               >
-                                <Edit className="h-3 w-3" />
-                              </IconButton>
+                                <Copy className="h-3 w-3" />
+                              </Button>
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p>Send to document</p>
+                              <p>Copy to clipboard</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="prose prose-sm max-w-none">
-                    {message.content}
-                  </div>
-                )}
+                        
+                        {sessionType === "document" && onSendToDocument && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <IconButton
+                                  onClick={() => handleSendToDoc(message.content)}
+                                  size="sm"
+                                  variant="ghost"
+                                >
+                                  <Edit className="h-3 w-3" />
+                                </IconButton>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Send to document</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    message.content
+                  )}
+                </div>
               </div>
             </div>
           ))}

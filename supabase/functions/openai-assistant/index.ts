@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
@@ -45,15 +46,12 @@ serve(async (req) => {
       documentContent, // Current document content for the document assistant
       sessionId,
       threadId, // For continuing existing conversations
-      generateDocument = false, // Flag to generate document content automatically
-      generateReport = false, // Flag to generate a comprehensive shortage report
-      rawData = false // Flag for whether to include raw data in the initial prompt
+      generateDocument = false // Flag to generate document content automatically
     } = await req.json();
 
     console.log(`Received request for ${assistantType} assistant`);
     console.log(`Thread ID: ${threadId || 'new thread'}`);
     console.log(`Generate Document: ${generateDocument}`);
-    console.log(`Generate Report: ${generateReport}`);
     
     // Select the appropriate assistant ID
     const assistantId = assistantType === "shortage" 
@@ -99,19 +97,7 @@ serve(async (req) => {
           initialPrompt += `Here is comprehensive data about all related shortages in full raw JSON format: ${JSON.stringify(allShortageData, null, 2)}. `;
         }
         
-        if (generateReport) {
-          initialPrompt += `Please generate a comprehensive, well-formatted report about this shortage. Include the following sections with clear headings:
-1. Overview - Brief summary of the shortage situation
-2. Product Details - Key information about the affected medication
-3. Expected Timeline - Known information about shortage duration and resolution
-4. Therapeutic Alternatives - Available alternative medications with dosing information
-5. Conservation Strategies - How to manage limited supply
-6. Patient Prioritization - Criteria for allocation if supply is limited
-
-Format your response using markdown headings and bullet points for clarity. Include specific information from the data provided.`;
-        } else {
-          initialPrompt += `Please provide a detailed analysis of the shortage situation, including therapeutic alternatives, conservation strategies, patient prioritization, and other relevant information.`;
-        }
+        initialPrompt += `Please provide a detailed analysis of the shortage situation, including therapeutic alternatives, conservation strategies, patient prioritization, and other relevant information.`;
       } else {
         initialPrompt = `You are helping create a concise document about a drug shortage. `;
         
