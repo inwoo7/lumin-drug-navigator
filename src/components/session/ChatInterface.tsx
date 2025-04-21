@@ -156,12 +156,21 @@ Return ONLY the complete updated document content.`;
       return;
     }
     
-    // Standard message handling
+    // Standard message handling for non-edit requests
     const message = inputMessage;
     setInputMessage("");
     try {
       console.log(`Sending standard message in ${sessionType} mode`);
-      await sendMessage(message);
+      const response = await sendMessage(message);
+      
+      // For document-related responses in document mode, automatically update the document
+      if (sessionType === "document" && 
+          response && 
+          onSendToDocument && 
+          (response.startsWith("# ") || response.includes("## Executive Summary"))) {
+        onSendToDocument(response);
+        toast.success("Document updated with new content");
+      }
     } catch (error) {
       console.error("Error sending message:", error);
       // Error is already handled in the hook, with fallback messages added
@@ -227,40 +236,55 @@ Return ONLY the complete updated document content.`;
       return "I've updated the document according to your instructions. The changes have been applied to the document editor.";
     }
     
+    // Hide prompts for document generation
+    if (content.includes("Generate a comprehensive drug shortage management plan") ||
+        content.includes("Generate a comprehensive analysis of the") ||
+        content.includes("Return ONLY the complete updated document content")) {
+      return "I'm analyzing the drug shortage data to create a detailed response...";
+    }
+    
     // Check if content contains JSON-like structures or API responses
     if (
       content.includes('{"data":') || 
       content.includes('"results":') || 
       content.includes('"shortage_id":') ||
       content.includes('"api":') ||
-      content.includes('"discontinued":')
+      content.includes('"discontinued":') ||
+      content.includes('"drug_shortage":') ||
+      content.includes('"drug_name":')
     ) {
       // Identify and remove JSON blocks from content
       let lines = content.split("\n");
       
-      // Filter out JSON-like content
+      // Filter out JSON-like content and code blocks
       const filteredLines = lines.filter(line => {
         return !(
-          line.includes('{') && (
+          // JSON structure indicators
+          (line.includes('{') && (
             line.includes('"data":') || 
             line.includes('"results":') || 
-            line.includes('"shortage_id":') ||
+            line.includes('"shortage_id":') || 
             line.includes('"api":') ||
             line.includes('"discontinued":') ||
             line.includes('"id":') ||
             line.includes('"drug_name":')
-          ) ||
+          )) ||
+          // Code block indicators
           line.includes('```json') || 
           line.includes('```') ||
-          line.match(/^\s*[\[\]\{\}]\s*$/) // Lines with just brackets
+          // Raw JSON brackets/braces
+          line.match(/^\s*[\[\]\{\}]\s*$/) ||
+          // Data dump markers
+          line.includes('shortage_id:') ||
+          line.includes('reported_date:')
         );
       });
       
       // Join the filtered lines back into a single string
       const filteredContent = filteredLines.join("\n");
       
-      // If filtering removed everything, provide a summary
-      if (filteredContent.trim() === '') {
+      // If filtering removed everything or most of the content, provide a summary
+      if (filteredContent.trim() === '' || filteredContent.length < content.length * 0.3) {
         return "I've analyzed the drug shortage data and I'm ready to help answer your questions.";
       }
       
@@ -318,26 +342,6 @@ Return ONLY the complete updated document content.`;
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
-                        
-                        {sessionType === "document" && onSendToDocument && (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  onClick={() => handleSendToDoc(message.content)}
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-7 w-7 p-0"
-                                >
-                                  <Edit className="h-3 w-3" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Send to document</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )}
                       </div>
                     </>
                   ) : (

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -61,8 +61,30 @@ const SessionPage = () => {
         setIsDocumentAssistantReady(true);
         saveDocument(content);
       }
+    },
+    onStateChange: (state) => {
+      // Mark document assistant ready when initialized
+      if (state.isInitialized) {
+        setIsDocumentAssistantReady(true);
+      }
+      
+      // If document generation fails or takes too long
+      if (!state.isLoading && !state.isInitialized && hasAttemptedDocInit.current) {
+        console.log("Document assistant failed to initialize properly");
+        setIsDocumentAssistantReady(true); // Allow user to proceed anyway
+      }
     }
   });
+  
+  // Reference to track initialization attempts
+  const hasAttemptedDocInit = useRef(false);
+  
+  // Set initialization attempt flag when conditions are right
+  useEffect(() => {
+    if (!!selectedReportData && !isDocumentGenerated && !docLoadAttempted && documentContent === "") {
+      hasAttemptedDocInit.current = true;
+    }
+  }, [selectedReportData, isDocumentGenerated, docLoadAttempted, documentContent]);
 
   // Initialize the Info AI Assistant to track when it's ready
   const infoAssistant = useOpenAIAssistant({
@@ -90,8 +112,11 @@ const SessionPage = () => {
         // Load document first
         await loadDocument();
         
-        // Only set loading to false when document is loaded 
-        // The loading screen will remain until both assistants are ready
+        // For sessions without selectedReportData, don't wait for assistants
+        if (!selectedReportData) {
+          setIsInfoAssistantReady(true);
+          setIsDocumentAssistantReady(true);
+        }
       } catch (err) {
         console.error("Error preloading session:", err);
         setIsInitialLoading(false);
@@ -99,12 +124,14 @@ const SessionPage = () => {
     };
     
     preloadSession();
-  }, [sessionId]);
+  }, [sessionId, selectedReportData]);
 
   // Check when both assistants are ready
   useEffect(() => {
+    console.log(`Assistant ready states - Info: ${isInfoAssistantReady}, Document: ${isDocumentAssistantReady}`);
     // If both assistants are ready or we have errors, show the main UI
     if ((isInfoAssistantReady && isDocumentAssistantReady) || docGenerationError) {
+      console.log("Both assistants ready or error occurred, showing main UI");
       setIsInitialLoading(false);
     }
   }, [isInfoAssistantReady, isDocumentAssistantReady, docGenerationError]);
@@ -299,29 +326,6 @@ const SessionPage = () => {
     }
   };
 
-  const handleSaveSession = async () => {
-    if (isSaving) return;
-    setIsSaving(true);
-    
-    try {
-      // Save document if we have one
-      if (documentContent && sessionId) {
-        await saveDocument(documentContent);
-        
-        toast.success("Session saved successfully", {
-          description: "All your work has been saved."
-        });
-      } else {
-        toast.info("No document to save");
-      }
-    } catch (err) {
-      console.error("Error saving session:", err);
-      toast.error("Failed to save session");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   // Handle report selection from DrugShortageInfo
   const handleReportSelect = (reportId: string, reportType: 'shortage' | 'discontinuation') => {
     setSelectedReportId(reportId);
@@ -339,14 +343,32 @@ const SessionPage = () => {
     setActiveTab(value);
   };
 
+  // Add a timeout to prevent getting stuck on loading screen
+  useEffect(() => {
+    // Force show the interface after 20 seconds even if assistants aren't ready
+    const loadingTimeout = setTimeout(() => {
+      if (isInitialLoading) {
+        console.log("Loading timeout reached - forcing UI display");
+        setIsInitialLoading(false);
+        setIsInfoAssistantReady(true);
+        setIsDocumentAssistantReady(true);
+      }
+    }, 20000); // 20 second timeout
+    
+    return () => clearTimeout(loadingTimeout);
+  }, [isInitialLoading]);
+
   // Show loading screen if we're in initial loading state
   if (isInitialLoading || isLoading || isSessionLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-t-lumin-teal border-r-lumin-teal border-b-gray-200 border-l-gray-200 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500">Preparing drug shortage data and AI assistants...</p>
-          <p className="text-xs text-gray-400 mt-2">This may take a moment as we analyze the shortage data</p>
+      <div className="flex items-center justify-center min-h-[80vh] bg-gray-50">
+        <div className="text-center p-8 rounded-lg shadow-md bg-white">
+          <div className="w-24 h-24 border-4 border-t-lumin-teal border-r-lumin-teal border-b-gray-200 border-l-gray-200 rounded-full animate-spin mx-auto mb-6"></div>
+          <h2 className="text-2xl font-semibold text-gray-700 mb-2">Preparing your session</h2>
+          <p className="text-gray-500 mb-4">Our AI is analyzing drug shortage data and preparing your documents</p>
+          <div className="bg-blue-50 p-3 rounded-md">
+            <p className="text-sm text-blue-600">This may take 15-30 seconds as we generate comprehensive information</p>
+          </div>
         </div>
       </div>
     );

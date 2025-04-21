@@ -281,9 +281,6 @@ Format the document in Markdown with clear headings and sections.`;
         setIsLoading(true);
         
         try {
-          // Create a thread and generate an initial comprehensive analysis
-          setIsInitialized(true);
-          
           console.log("Initializing shortage assistant with comprehensive analysis");
           
           const initialPrompt = `Generate a comprehensive analysis of the ${drugShortageData?.brand_name || drugShortageData?.drug_name || "drug"} shortage.
@@ -324,19 +321,24 @@ Format your response with clear headings and bullet points where appropriate.`;
             
             // Add the initial comprehensive analysis to the chat
             if (data.message) {
-              addMessage("assistant", data.message);
-              // Save this conversation to the database
-              saveConversation([{
+              const initialMessage = {
                 id: Date.now().toString(),
-                role: "assistant",
+                role: "assistant" as const,
                 content: data.message,
-                timestamp: new Date()
-              }]);
+                timestamp: new Date(),
+              };
+              
+              setMessages([initialMessage]);
+              
+              // Save this conversation to the database
+              saveConversation([initialMessage]);
             }
           }
           
           // After initialization, we don't need to send raw data anymore
           setShouldSendRawData(false);
+          // Set initialized to true only AFTER we've processed the response
+          setIsInitialized(true);
         } catch (err: any) {
           console.error("Error initializing info assistant:", err);
           toast.error("Error connecting to assistant service. Using offline mode.");
@@ -579,11 +581,21 @@ Format your response with clear headings and bullet points where appropriate.`;
         let assistantResponse = data.message;
         let chatResponse = data.message;
         
-        // For document edits, handle the response differently in chat vs actual document content
-        if (assistantType === "document" && isDocEdit) {
-          // For the chat, always show a standardized response for document edits
-          chatResponse = "I've updated the document according to your instructions. The changes have been applied to the document editor.";
-          console.log("Document edit detected, updating document content");
+        // For document edits or creation, handle the response differently in chat vs actual document content
+        if (assistantType === "document" && 
+            (isDocEdit || 
+             assistantResponse.startsWith("# ") || 
+             assistantResponse.includes("## Executive Summary"))) {
+          
+          // For document edits, show a standardized chat response
+          if (isDocEdit) {
+            chatResponse = "I've updated the document according to your instructions. The changes have been applied to the document editor.";
+          } else {
+            // For document creations or explanations that include document content
+            chatResponse = "I've prepared a response based on the drug shortage data. If this looks good, it has been automatically applied to the document.";
+          }
+          
+          console.log("Document content detected, updating document");
           
           // For the document update, use the full content
           if (onDocumentUpdate) {
