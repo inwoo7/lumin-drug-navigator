@@ -279,32 +279,73 @@ Format the document in Markdown with clear headings and sections.`;
         setIsLoading(true);
         
         try {
-          // Don't send any initial message - let the user start the conversation
-          setIsInitialized(true);
-          setHasAttemptedGeneration(true);
+          console.log("Initializing shortage info assistant with comprehensive report generation");
           
-          // Create a thread silently, so it's ready for when the user asks a question
+          // Generate a comprehensive report when first initializing the assistant
+          const comprehensivePrompt = `Generate a comprehensive report about ${drugShortageData.brand_name || drugShortageData.drug_name} shortage using the provided data. Include:
+1. Overview of the shortage situation
+2. Expected timeline for resolution
+3. Therapeutic alternatives with dosing information
+4. Conservation strategies
+5. Patient prioritization criteria if needed
+
+Format the response with clear headings and concise information.`;
+
           const { data, error } = await supabase.functions.invoke("openai-assistant", {
             body: {
               assistantType: "shortage",
-              messages: [],
+              messages: [{
+                role: "user",
+                content: comprehensivePrompt
+              }],
               drugData: drugShortageData,
               allShortageData: allShortageData || [],
               sessionId,
-              createThreadOnly: true, // Only create thread, don't generate a message
-              rawData: shouldSendRawData // Only send raw data for initial thread creation
+              rawData: shouldSendRawData, // Only send raw data for initial thread creation
+              generateReport: true // Flag to indicate we want to generate a comprehensive report
             },
           });
           
           if (error) {
-            console.error("Error creating assistant thread:", error);
+            console.error("Error initializing shortage assistant:", error);
             toast.error("Error initializing assistant. Using offline mode.");
-          } else if (data.threadId) {
-            setThreadId(data.threadId);
+          } else {
+            // Set thread ID for future messages
+            if (data.threadId) {
+              setThreadId(data.threadId);
+            }
+            
+            // Add the assistant's response to the chat
+            if (data.message) {
+              const assistantMessage = {
+                id: Date.now().toString(),
+                role: "assistant" as const,
+                content: data.message,
+                timestamp: new Date(),
+              };
+              
+              setMessages(prevMessages => [...prevMessages, assistantMessage]);
+              
+              // Save the comprehensive report to the database
+              if (sessionId && data.threadId) {
+                try {
+                  await supabase.rpc('save_ai_conversation', {
+                    p_session_id: sessionId,
+                    p_assistant_type: assistantType,
+                    p_thread_id: data.threadId,
+                    p_messages: JSON.stringify([assistantMessage])
+                  });
+                  console.log("Saved comprehensive report conversation to database");
+                } catch (saveErr) {
+                  console.error("Error saving conversation:", saveErr);
+                }
+              }
+            }
           }
           
           // After initialization, we don't need to send raw data anymore
           setShouldSendRawData(false);
+          setIsInitialized(true);
         } catch (err: any) {
           console.error("Error initializing info assistant:", err);
           toast.error("Error connecting to assistant service. Using offline mode.");

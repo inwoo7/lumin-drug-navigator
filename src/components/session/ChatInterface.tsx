@@ -270,56 +270,56 @@ Return ONLY the complete updated document content.`;
                     : "bg-gray-100 text-gray-800"
                 }`}
               >
-                <div className="prose prose-sm max-w-none">
-                  {message.role === "assistant" ? (
-                    <>
-                      <ReactMarkdown>
-                        {formatChatMessage(message.content)}
-                      </ReactMarkdown>
+                {message.role === "assistant" ? (
+                  <div className="prose prose-sm max-w-none prose-headings:font-semibold prose-p:my-2 prose-ul:my-2 prose-li:my-0">
+                    <ReactMarkdown>
+                      {formatChatMessage(message.content)}
+                    </ReactMarkdown>
+                    
+                    <div className="flex justify-end gap-1 mt-2">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              onClick={() => handleCopyMessage(message.content)}
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0"
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Copy to clipboard</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                       
-                      <div className="flex justify-end gap-1 mt-2">
+                      {sessionType === "document" && onSendToDocument && (
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button
-                                onClick={() => handleCopyMessage(message.content)}
+                              <IconButton
+                                onClick={() => handleSendToDoc(message.content)}
                                 size="sm"
                                 variant="ghost"
-                                className="h-7 w-7 p-0"
                               >
-                                <Copy className="h-3 w-3" />
-                              </Button>
+                                <Edit className="h-3 w-3" />
+                              </IconButton>
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p>Copy to clipboard</p>
+                              <p>Send to document</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
-                        
-                        {sessionType === "document" && onSendToDocument && (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <IconButton
-                                  onClick={() => handleSendToDoc(message.content)}
-                                  size="sm"
-                                  variant="ghost"
-                                >
-                                  <Edit className="h-3 w-3" />
-                                </IconButton>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Send to document</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    message.content
-                  )}
-                </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="prose prose-sm max-w-none">
+                    {message.content}
+                  </div>
+                )}
               </div>
             </div>
           ))}
