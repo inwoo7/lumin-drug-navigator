@@ -271,10 +271,12 @@ Return ONLY the complete updated document content.`;
                 }`}
               >
                 {message.role === "assistant" ? (
-                  <div className="prose prose-sm max-w-none prose-headings:font-semibold prose-p:my-2 prose-ul:my-2 prose-li:my-0">
-                    <ReactMarkdown>
-                      {formatChatMessage(message.content)}
-                    </ReactMarkdown>
+                  <div className="prose prose-sm max-w-none prose-headings:font-semibold prose-p:my-2 prose-ul:my-2 prose-li:my-0 prose-pre:bg-gray-100 prose-pre:p-2 prose-pre:rounded prose-pre:text-sm prose-code:text-gray-800 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded">
+                    <div className="markdown-content">
+                      <ReactMarkdown>
+                        {formatChatMessage(message.content)}
+                      </ReactMarkdown>
+                    </div>
                     
                     <div className="flex justify-end gap-1 mt-2">
                       <TooltipProvider>
@@ -303,6 +305,7 @@ Return ONLY the complete updated document content.`;
                                 onClick={() => handleSendToDoc(message.content)}
                                 size="sm"
                                 variant="ghost"
+                                className="h-7 w-7 p-0"
                               >
                                 <Edit className="h-3 w-3" />
                               </IconButton>
