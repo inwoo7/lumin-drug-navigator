@@ -231,7 +231,7 @@ Return ONLY the complete updated document content.`;
                            content.includes('"report_id":') ||
                            content.includes('raw JSON format');
     
-    // If this message contains both system prompts and raw data, completely replace it
+    // If this message contains both system prompts and raw data, completely hide it
     if (containsSystemPrompt && containsRawJSON) {
       return "I'm analyzing the drug shortage data to provide you with comprehensive information. I'll be ready to answer your questions momentarily.";
     }
@@ -256,7 +256,7 @@ Return ONLY the complete updated document content.`;
       return "I've updated the document according to your instructions. The changes have been applied to the document editor.";
     }
     
-    // Hide system prompts
+    // Hide any system prompts, instructions or raw data completely
     if (content.includes("Generate a comprehensive") || 
         content.includes("Please edit the document") ||
         content.includes("Include the following") ||
@@ -264,35 +264,17 @@ Return ONLY the complete updated document content.`;
         content.includes("Return ONLY the complete updated") ||
         content.includes("Format your response with") ||
         content.includes("Format the document in Markdown") ||
-        content.includes("You are analyzing drug shortage data")) {
+        content.includes("You are analyzing drug shortage data") ||
+        content.includes("raw JSON format") ||
+        content.includes("Please provide a detailed analysis")) {
       return "I'm analyzing the drug shortage data to create a detailed response...";
     }
     
-    // Aggressive filtering for JSON data
-    if (
-      content.includes('{"data":') || 
-      content.includes('"results":') || 
-      content.includes('"shortage_id":') ||
-      content.includes('"api":') ||
-      content.includes('"discontinued":') ||
-      content.includes('"drug_shortage":') ||
-      content.includes('"drug_name":') ||
-      content.includes("shortage_id:") ||
-      content.includes("reported_date:") ||
-      content.includes('"id":') ||
-      content.includes('"type":') ||
-      content.includes('"status":') ||
-      content.includes('"report_id":') ||
-      content.includes('"brand_name":') ||
-      content.includes('"dosage_form":') ||
-      content.includes('"company_name":') ||
-      content.includes('"updated_date":') ||
-      content.includes('"active_ingredients":') ||
-      content.includes('"strength":') ||
-      content.includes("raw JSON format") ||
-      content.includes("[{") ||
-      content.includes("}]")
-    ) {
+    // Filter out any JSON data sections completely
+    if (content.includes('{"id":') || 
+        content.includes('"type":"shortage"') || 
+        content.includes('"report_id":') || 
+        content.includes('"brand_name":')) {
       // Create a completely filtered version by removing JSON sections
       let filteredContent = "";
       
