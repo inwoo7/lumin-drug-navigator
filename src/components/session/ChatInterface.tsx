@@ -133,6 +133,13 @@ Return ONLY the complete updated document content.`;
         const updatedContent = await sendMessage(editingPrompt);
         
         if (updatedContent && onSendToDocument) {
+          // Add the user's message to the chat
+          addMessage("user", message);
+          
+          // Add a standardized response message
+          addMessage("assistant", "I've updated the document according to your instructions. The changes have been applied to the document editor.");
+          
+          // Update the document content
           onSendToDocument(updatedContent);
           toast.success("Document updated successfully", { id: "document-edit" });
         } else {
@@ -203,10 +210,19 @@ Return ONLY the complete updated document content.`;
     // Special handling for document edits - convert full document to a response message
     if (
       sessionType === "document" && 
-      content.startsWith("#") && 
-      (content.includes("# Drug Shortage Management Plan") || 
-       content.includes("Executive Summary") || 
-       content.includes("Product Details"))
+      (
+        // Check for markdown headers that indicate a document
+        (content.startsWith("#") && 
+         (content.includes("# Drug Shortage Management Plan") || 
+          content.includes("Executive Summary") || 
+          content.includes("Product Details"))) ||
+        // Check for document structure with sections
+        (content.includes("## Executive Summary") || 
+         content.includes("## Product Details") || 
+         content.includes("## Shortage Impact Assessment")) ||
+        // Check for completed document edit message
+        content.includes("I've updated the document according to your instructions")
+      )
     ) {
       return "I've updated the document according to your instructions. The changes have been applied to the document editor.";
     }

@@ -22,6 +22,7 @@ type UseOpenAIAssistantProps = {
   onDocumentUpdate?: (content: string) => void; // Callback to update document
   generateDocument?: boolean; // Flag to generate document on initialization
   rawApiData?: boolean; // Flag to indicate we should send the raw API data
+  onStateChange?: (state: { isInitialized: boolean; isLoading: boolean }) => void; // Callback for state changes
 };
 
 export const useOpenAIAssistant = ({
@@ -34,6 +35,7 @@ export const useOpenAIAssistant = ({
   onDocumentUpdate,
   generateDocument = false,
   rawApiData = false,
+  onStateChange,
 }: UseOpenAIAssistantProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -515,7 +517,8 @@ Format your response with clear headings and bullet points where appropriate.`;
       const isDocEdit = (assistantType === "document" && 
         (content.includes("Please edit the document") || 
          content.includes("update the document") || 
-         content.includes("change the document")));
+         content.includes("change the document") ||
+         content.includes("edit the document")));
       
       // For document editing, ensure the LLM has context of the current document
       let contextualContent = content;
@@ -578,7 +581,7 @@ Format your response with clear headings and bullet points where appropriate.`;
         
         // For document edits, handle the response differently in chat vs actual document content
         if (assistantType === "document" && isDocEdit) {
-          // For the chat, show a simpler message
+          // For the chat, always show a standardized response for document edits
           chatResponse = "I've updated the document according to your instructions. The changes have been applied to the document editor.";
           console.log("Document edit detected, updating document content");
           
@@ -715,6 +718,12 @@ Format your response with clear headings and bullet points where appropriate.`;
       loadMessages();
     }
   }, [sessionId, isInitialized, messages.length]);
+
+  useEffect(() => {
+    if (onStateChange) {
+      onStateChange({ isInitialized, isLoading });
+    }
+  }, [isInitialized, isLoading, onStateChange]);
 
   return {
     messages,

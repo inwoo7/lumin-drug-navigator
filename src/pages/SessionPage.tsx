@@ -31,6 +31,8 @@ const SessionPage = () => {
   const [docLoadAttempted, setDocLoadAttempted] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isInfoAssistantReady, setIsInfoAssistantReady] = useState(false);
+  const [isDocumentAssistantReady, setIsDocumentAssistantReady] = useState(false);
   
   // Use our hook to load session data
   const { session, isLoading: isSessionLoading, isError: isSessionError } = useSession(sessionId);
@@ -56,7 +58,22 @@ const SessionPage = () => {
         setDocumentContent(content);
         setIsDocumentGenerated(true);
         setIsDocumentInitializing(false);
+        setIsDocumentAssistantReady(true);
         saveDocument(content);
+      }
+    }
+  });
+
+  // Initialize the Info AI Assistant to track when it's ready
+  const infoAssistant = useOpenAIAssistant({
+    assistantType: "shortage",
+    sessionId,
+    drugShortageData: selectedReportData,
+    allShortageData: [],
+    autoInitialize: !!selectedReportData && sessionId !== undefined,
+    onStateChange: (state) => {
+      if (state.isInitialized) {
+        setIsInfoAssistantReady(true);
       }
     }
   });
@@ -73,9 +90,8 @@ const SessionPage = () => {
         // Load document first
         await loadDocument();
         
-        // Then set loading to false to display the page
-        setIsInitialLoading(false);
-        console.log("Session preloading complete, ready to render UI");
+        // Only set loading to false when document is loaded 
+        // The loading screen will remain until both assistants are ready
       } catch (err) {
         console.error("Error preloading session:", err);
         setIsInitialLoading(false);
@@ -84,6 +100,14 @@ const SessionPage = () => {
     
     preloadSession();
   }, [sessionId]);
+
+  // Check when both assistants are ready
+  useEffect(() => {
+    // If both assistants are ready or we have errors, show the main UI
+    if ((isInfoAssistantReady && isDocumentAssistantReady) || docGenerationError) {
+      setIsInitialLoading(false);
+    }
+  }, [isInfoAssistantReady, isDocumentAssistantReady, docGenerationError]);
   
   // Effect to handle document initialization state
   useEffect(() => {
@@ -321,7 +345,8 @@ const SessionPage = () => {
       <div className="flex items-center justify-center min-h-[50vh]">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-t-lumin-teal border-r-lumin-teal border-b-gray-200 border-l-gray-200 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500">Loading session data...</p>
+          <p className="text-gray-500">Preparing drug shortage data and AI assistants...</p>
+          <p className="text-xs text-gray-400 mt-2">This may take a moment as we analyze the shortage data</p>
         </div>
       </div>
     );
@@ -337,16 +362,6 @@ const SessionPage = () => {
             </Button>
           </Link>
           <h1 className="text-2xl font-bold ml-2">{drugName} Shortage</h1>
-        </div>
-        
-        <div>
-          <Button 
-            onClick={handleSaveSession}
-            variant="outline"
-            disabled={isSaving}
-          >
-            {isSaving ? "Saving..." : "Save Session"}
-          </Button>
         </div>
       </div>
       
