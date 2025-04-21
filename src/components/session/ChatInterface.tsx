@@ -216,15 +216,24 @@ Return ONLY the complete updated document content.`;
 
   // Format chat message for display
   const formatChatMessage = (content: string) => {
-    // Hide system prompts
-    if (content.includes("Generate a comprehensive") || 
-        content.includes("Please edit the document") ||
-        content.includes("Include the following") ||
-        content.includes("Background of the shortage") ||
-        content.includes("Return ONLY the complete updated") ||
-        content.includes("Format your response with") ||
-        content.includes("Format the document in Markdown")) {
-      return "I'm analyzing the drug shortage data to create a detailed response...";
+    // Check if this message contains a system prompt or raw data
+    const containsSystemPrompt = content.includes("Generate a comprehensive") || 
+                                 content.includes("Please edit the document") ||
+                                 content.includes("Include the following information") || 
+                                 content.includes("Background of the shortage") ||
+                                 content.includes("Format your response") ||
+                                 content.includes("You are analyzing drug shortage data");
+                                 
+    const containsRawJSON = content.includes('{"id":') || 
+                           content.includes('"type":"shortage"') ||
+                           content.includes('"brand_name":') ||
+                           content.includes('"dosage_form":') ||
+                           content.includes('"report_id":') ||
+                           content.includes('raw JSON format');
+    
+    // If this message contains both system prompts and raw data, completely replace it
+    if (containsSystemPrompt && containsRawJSON) {
+      return "I'm analyzing the drug shortage data to provide you with comprehensive information. I'll be ready to answer your questions momentarily.";
     }
     
     // Special handling for document edits - convert full document to a response message
@@ -247,7 +256,19 @@ Return ONLY the complete updated document content.`;
       return "I've updated the document according to your instructions. The changes have been applied to the document editor.";
     }
     
-    // Check if content contains JSON-like structures or API responses
+    // Hide system prompts
+    if (content.includes("Generate a comprehensive") || 
+        content.includes("Please edit the document") ||
+        content.includes("Include the following") ||
+        content.includes("Background of the shortage") ||
+        content.includes("Return ONLY the complete updated") ||
+        content.includes("Format your response with") ||
+        content.includes("Format the document in Markdown") ||
+        content.includes("You are analyzing drug shortage data")) {
+      return "I'm analyzing the drug shortage data to create a detailed response...";
+    }
+    
+    // Aggressive filtering for JSON data
     if (
       content.includes('{"data":') || 
       content.includes('"results":') || 
@@ -257,48 +278,48 @@ Return ONLY the complete updated document content.`;
       content.includes('"drug_shortage":') ||
       content.includes('"drug_name":') ||
       content.includes("shortage_id:") ||
-      content.includes("reported_date:")
+      content.includes("reported_date:") ||
+      content.includes('"id":') ||
+      content.includes('"type":') ||
+      content.includes('"status":') ||
+      content.includes('"report_id":') ||
+      content.includes('"brand_name":') ||
+      content.includes('"dosage_form":') ||
+      content.includes('"company_name":') ||
+      content.includes('"updated_date":') ||
+      content.includes('"active_ingredients":') ||
+      content.includes('"strength":') ||
+      content.includes("raw JSON format") ||
+      content.includes("[{") ||
+      content.includes("}]")
     ) {
-      // Identify and remove JSON blocks from content
-      let lines = content.split("\n");
+      // Create a completely filtered version by removing JSON sections
+      let filteredContent = "";
       
-      // Filter out JSON-like content and code blocks
-      const filteredLines = lines.filter(line => {
-        return !(
-          // JSON structure indicators
-          (line.includes('{') && (
-            line.includes('"data":') || 
-            line.includes('"results":') || 
-            line.includes('"shortage_id":') || 
-            line.includes('"api":') ||
-            line.includes('"discontinued":') ||
-            line.includes('"id":') ||
-            line.includes('"drug_name":') ||
-            line.includes('"created_at":') ||
-            line.includes('"updated_at":')
-          )) ||
-          // Code block indicators
-          line.includes('```json') || 
-          line.includes('```') ||
-          // Raw JSON brackets/braces
-          line.match(/^\s*[\[\]\{\}]\s*$/) ||
-          // Data dump markers
-          line.includes('shortage_id:') ||
-          line.includes('reported_date:') ||
-          line.includes('drug_code:') ||
-          line.includes('drug_identification_number:')
-        );
-      });
+      // Only keep complete sentences that don't contain JSON
+      const sentences = content.split(/(?<=[.!?])\s+/);
+      for (const sentence of sentences) {
+        if (!sentence.includes('":') && 
+            !sentence.includes('"id":') && 
+            !sentence.includes('"type":') && 
+            !sentence.includes('"report_id":') && 
+            !sentence.includes("JSON") && 
+            !sentence.includes("[{")) {
+          filteredContent += sentence + " ";
+        }
+      }
       
-      // Join the filtered lines back into a single string
-      const filteredContent = filteredLines.join("\n");
+      // Remove any code blocks
+      filteredContent = filteredContent.replace(/```[\s\S]*?```/g, "");
       
       // If filtering removed everything or most of the content, provide a summary
-      if (filteredContent.trim() === '' || filteredContent.length < content.length * 0.3) {
+      if (filteredContent.trim() === '' || 
+          filteredContent.length < 100 || 
+          filteredContent.length < content.length * 0.3) {
         return "I've analyzed the drug shortage data and I'm ready to help answer your questions about this medication shortage.";
       }
       
-      return filteredContent;
+      return filteredContent.trim();
     }
     
     return content;

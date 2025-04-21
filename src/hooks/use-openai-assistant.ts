@@ -163,6 +163,18 @@ export const useOpenAIAssistant = ({
       setIsLoading(true);
       
       try {
+        // We'll use a simplified message for the UI instead of showing the actual prompt
+        const initialMessage = {
+          id: Date.now().toString(),
+          role: "assistant" as const,
+          content: "I'm analyzing the drug shortage data to create a comprehensive management plan...",
+          timestamp: new Date(),
+        };
+        
+        // Add a placeholder message while we wait
+        setMessages([initialMessage]);
+        
+        // Generate the document
         const generationPrompt = `Generate a comprehensive drug shortage management plan for ${drugShortageData.brand_name || drugShortageData.drug_name}. 
 Include the following sections:
 1. Executive Summary - Overview of the shortage situation
@@ -217,8 +229,16 @@ Format the document in Markdown with clear headings and sections.`;
           onDocumentUpdate(data.message);
         }
         
-        // Add the system message to chat history
-        addMessage("assistant", "I've generated a document based on the drug shortage data. You can now ask me to make changes or explain any part of it.");
+        // Update the chat with a confirmation message instead of showing system instructions
+        const completionMessage = {
+          id: Date.now().toString(),
+          role: "assistant" as const,
+          content: "I've generated a document based on the drug shortage data. You can now ask me to make changes or explain any part of it.",
+          timestamp: new Date(),
+        };
+        
+        // Replace the placeholder message with the completion message
+        setMessages([completionMessage]);
         
         // Save this conversation to the database
         if (sessionId && data.threadId) {
@@ -227,12 +247,7 @@ Format the document in Markdown with clear headings and sections.`;
               p_session_id: sessionId,
               p_assistant_type: assistantType,
               p_thread_id: data.threadId,
-              p_messages: JSON.stringify([{
-                id: Date.now().toString(),
-                role: "assistant",
-                content: "I've generated a document based on the drug shortage data. You can now ask me to make changes or explain any part of it.",
-                timestamp: new Date().toISOString()
-              }])
+              p_messages: JSON.stringify([completionMessage])
             });
           } catch (saveErr) {
             console.error("Error saving conversation:", saveErr);
@@ -341,6 +356,17 @@ Format the document in Markdown with clear headings and sections.`;
         setIsLoading(true);
         
         try {
+          // Add a placeholder message showing we're analyzing data (to be displayed to user)
+          const initialMessage = {
+            id: Date.now().toString(),
+            role: "assistant" as const,
+            content: "I'm analyzing the drug shortage data and preparing a comprehensive response...",
+            timestamp: new Date(),
+          };
+          
+          // Set the placeholder message
+          setMessages([initialMessage]);
+          
           console.log("Initializing shortage assistant with comprehensive analysis");
           
           const initialPrompt = `Generate a comprehensive analysis of the ${drugShortageData?.brand_name || drugShortageData?.drug_name || "drug"} shortage.
@@ -381,17 +407,18 @@ Format your response with clear headings and bullet points where appropriate.`;
             
             // Add the initial comprehensive analysis to the chat
             if (data.message) {
-              const initialMessage = {
+              const responseMessage = {
                 id: Date.now().toString(),
                 role: "assistant" as const,
                 content: data.message,
                 timestamp: new Date(),
               };
               
-              setMessages([initialMessage]);
+              // Replace the placeholder with the actual response
+              setMessages([responseMessage]);
               
               // Save this conversation to the database
-              saveConversation([initialMessage]);
+              saveConversation([responseMessage]);
             }
           }
           
