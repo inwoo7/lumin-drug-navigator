@@ -1,73 +1,140 @@
-# Welcome to your Lovable project
+# Lumin Drug Navigator
 
-## Project info
+## Overview
 
-**URL**: https://lovable.dev/projects/fb56b0a8-42e3-46f2-bf17-23f6d77fa8f4
+Lumin Drug Navigator is an AI-powered application designed to help healthcare professionals manage and respond to drug shortages. The application provides comprehensive information about drug shortages, allows for interactive discussions with an AI assistant about therapeutic alternatives and conservation strategies, and helps create detailed drug shortage management plans that can be exported as professional PDF documents.
 
-## How can I edit this code?
+## Technology Stack
 
-There are several ways of editing your application.
+- **Frontend**: React with TypeScript
+- **Build Tool**: Vite
+- **Styling**: Tailwind CSS with shadcn/ui components
+- **State Management**: React Hooks
+- **Backend**: Supabase for database and serverless functions
+- **AI Integration**: OpenAI API for AI assistance
+- **PDF Generation**: jsPDF and html2canvas
+- **Routing**: React Router
 
-**Use Lovable**
+## Key Features
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/fb56b0a8-42e3-46f2-bf17-23f6d77fa8f4) and start prompting.
+### 1. Drug Shortage Information
+- Search for drugs with reported shortages
+- View detailed information about drug shortages
+- Access comprehensive data from official sources
 
-Changes made via Lovable will be committed automatically to this repo.
+### 2. AI Assistant
+- Interactive chat interface for discussing drug shortages
+- Two assistant modes:
+  - **Information Mode**: Ask questions about specific drug shortages, alternatives, and conservation strategies
+  - **Document Mode**: Get help creating and editing drug shortage management plans
 
-**Use your preferred IDE**
+### 3. Document Management
+- Create detailed drug shortage management plans
+- AI-assisted document generation based on shortage data
+- Markdown-based document editing
+- Real-time preview of document formatting
+- Export documents as professional PDFs in A4 format
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### 4. Session Management
+- Save and load chat conversations
+- Store generated documents
+- Track drug shortage analysis history
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+## Application Structure
 
-Follow these steps:
+The application is organized into the following key components:
+
+- **Chat Interface**: Handles communication with the AI assistant
+- **Document Editor**: Provides tools for creating and editing documents
+- **Drug Shortage Info**: Displays detailed information about specific shortages
+- **Dashboard**: Central hub for accessing application features
+
+## How It Works
+
+1. **Data Sourcing**: The application retrieves drug shortage information from official databases
+2. **AI Processing**: It uses OpenAI's API to analyze shortage data and generate insights
+3. **Interactive Assistance**: Users can ask questions about shortages and get detailed responses
+4. **Document Generation**: The AI helps create comprehensive shortage management plans
+5. **Export Capability**: Documents can be exported as professional PDFs for distribution
+
+## Installation and Setup
+
+### Prerequisites
+- Node.js (v16 or later)
+- npm or yarn package manager
+- Supabase account for backend services
+- OpenAI API key for AI functionality
+
+### Installation Steps
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+# Clone the repository
+git clone <repository-url>
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+# Navigate to project directory
+cd lumin-drug-navigator
 
-# Step 3: Install the necessary dependencies.
-npm i
+# Install dependencies
+npm install
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# Set up environment variables
+# Create a .env file with the following:
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_OPENAI_API_KEY=your_openai_api_key
+
+# Start development server
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+## Usage Guide
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Searching for Drug Shortages
+1. Navigate to the Dashboard
+2. Use the search bar to find drugs by name
+3. Select a drug to view detailed shortage information
 
-**Use GitHub Codespaces**
+### Using the AI Assistant
+1. Select a drug shortage to analyze
+2. Use the chat interface to ask questions about:
+   - Therapeutic alternatives
+   - Conservation strategies
+   - Impact assessment
+   - Implementation plans
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+### Creating a Shortage Management Plan
+1. Select a drug shortage to manage
+2. Navigate to the Document tab
+3. Use the AI assistant to help generate content
+4. Edit the document as needed
+5. Export as PDF when complete
 
-## What technologies are used for this project?
+### Exporting Documents
+1. Navigate to the Document Editor
+2. Click the "Export PDF" button
+3. The document will be formatted as a professional A4 PDF
+4. Save the PDF to your desired location
 
-This project is built with:
+## Development
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### Project Structure
 
-## How can I deploy this project?
+```
+src/
+├── components/          # UI components
+│   ├── session/         # Session-related components
+│   ├── ui/              # Reusable UI components
+│   └── drug-search/     # Drug search components
+├── hooks/               # Custom React hooks
+│   ├── use-openai-assistant.ts   # AI assistant functionality
+│   └── use-drug-shortages.ts     # Drug shortage data handling
+├── integrations/        # External service integrations
+│   ├── supabase/        # Supabase client and utilities
+│   └── drugShortage/    # Drug shortage API integration
+├── pages/               # Main application pages
+└── types/               # TypeScript type definitions
+```
 
-Simply open [Lovable](https://lovable.dev/projects/fb56b0a8-42e3-46f2-bf17-23f6d77fa8f4) and click on Share -> Publish.
+## License
 
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+This project is proprietary and confidential.
