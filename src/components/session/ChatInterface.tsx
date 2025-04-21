@@ -8,9 +8,8 @@ import { useOpenAIAssistant, Message as AIMessage, AssistantType } from "@/hooks
 import { useDrugShortageReport, useDrugShortageSearch } from "@/hooks/use-drug-shortages";
 import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Button as IconButton } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import ReactMarkdown from "react-markdown";
+import { Input } from "@/components/ui/input";
 
 interface ChatInterfaceProps {
   drugName: string;
@@ -22,19 +21,20 @@ interface ChatInterfaceProps {
   onSendToDocument?: (content: string) => void;
 }
 
-const ChatInterface = ({ 
-  drugName, 
-  sessionType, 
+export function ChatInterface({
+  drugName,
+  sessionType,
   sessionId,
   reportId,
-  reportType = 'shortage',
+  reportType,
   documentContent,
-  onSendToDocument 
-}: ChatInterfaceProps) => {
+  onSendToDocument,
+}: ChatInterfaceProps) {
   const [inputMessage, setInputMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isMessageSending, setIsMessageSending] = useState(false);
+  const [documentEditMode, setDocumentEditMode] = useState(false);
   
   // Get drug shortage report data
   const { report, isLoading: isReportLoading } = useDrugShortageReport(
@@ -50,32 +50,28 @@ const ChatInterface = ({
   );
   
   // Map session type to assistant type
-  const assistantType: AssistantType = sessionType === "info" ? "shortage" : "document";
+  const assistantType: AssistantType = sessionType === "document" ? "document" : "shortage";
   
-  // Initialize the OpenAI Assistant
   const {
     messages,
-    isLoading: isAILoading,
+    isLoading,
+    error,
     sendMessage,
     isInitialized,
-    addMessage,
-    error
+    addMessage
   } = useOpenAIAssistant({
     assistantType,
     sessionId,
     drugShortageData: report,
     allShortageData: shortages,
     documentContent,
-    autoInitialize: true,
-    onDocumentUpdate: sessionType === "document" ? onSendToDocument : undefined,
-    generateDocument: sessionType === "document", // Always attempt to generate document when in document mode
-    rawApiData: false // Only send raw data on first initialization, not when restoring sessions
+    autoInitialize: true
   });
   
   // Add initial assistant message when chat first loads if not initialized and no messages
   useEffect(() => {
     // Only add a welcome message if there are no messages AND the assistant is initialized
-    if (messages.length === 0 && !isReportLoading && !isAILoading && isInitialized) {
+    if (messages.length === 0 && !isReportLoading && !isLoading && isInitialized) {
       console.log(`Adding welcome message for ${sessionType} assistant`);
       let initialMessage = "";
       
@@ -88,7 +84,7 @@ const ChatInterface = ({
       // Only add this intro message if we don't have any messages yet
       addMessage("assistant", initialMessage);
     }
-  }, [drugName, sessionType, messages.length, isInitialized, isReportLoading, isAILoading, addMessage]);
+  }, [drugName, sessionType, messages.length, isInitialized, isReportLoading, isLoading, addMessage]);
 
   useEffect(() => {
     // Scroll to bottom when messages change
@@ -100,7 +96,7 @@ const ChatInterface = ({
   };
 
   const handleSendMessage = async () => {
-    if (inputMessage.trim() === "" || isAILoading) return;
+    if (inputMessage.trim() === "" || isLoading) return;
     
     // If we're waiting for the drug data, show a toast or message
     if (isReportLoading) {
@@ -193,7 +189,7 @@ Return ONLY the complete updated document content.`;
   };
 
   // Only show loading indicators when actively sending a message
-  const showLoadingIndicator = isMessageSending && isAILoading;
+  const showLoadingIndicator = isMessageSending && isLoading;
 
   // Function to copy message content to clipboard
   const handleCopyMessage = (content: string) => {
@@ -294,7 +290,7 @@ Return ONLY the complete updated document content.`;
                             <TooltipTrigger asChild>
                               <Button
                                 onClick={() => handleCopyMessage(message.content)}
-                                size="sm"
+                                size="icon"
                                 variant="ghost"
                                 className="h-7 w-7 p-0"
                               >
@@ -311,13 +307,14 @@ Return ONLY the complete updated document content.`;
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <IconButton
+                                <Button
                                   onClick={() => handleSendToDoc(message.content)}
-                                  size="sm"
+                                  size="icon"
                                   variant="ghost"
+                                  className="h-7 w-7 p-0"
                                 >
                                   <Edit className="h-3 w-3" />
-                                </IconButton>
+                                </Button>
                               </TooltipTrigger>
                               <TooltipContent>
                                 <p>Send to document</p>
@@ -372,6 +369,6 @@ Return ONLY the complete updated document content.`;
       </CardFooter>
     </Card>
   );
-};
+}
 
 export default ChatInterface;
