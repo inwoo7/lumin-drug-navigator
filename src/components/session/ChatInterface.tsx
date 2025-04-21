@@ -219,49 +219,30 @@ Return ONLY the complete updated document content.`;
     // First, detect if this contains any common prompt patterns
     const promptPatterns = [
       "Generate a comprehensive", 
-      "Please edit the document",
-      "Include the following information",
-      "Background of the shortage",
-      "Format your response",
-      "You are analyzing drug shortage data",
-      "therapeutic alternatives",
-      "conservation strategies",
-      "patient prioritization",
-      "implementation plan",
-      "Format the document in Markdown",
+      "Please edit the document with the following instructions:",
       "Return ONLY the complete updated",
       "This is the specific drug data",
       "Here is comprehensive data about all related shortages",
       "raw JSON format",
-      "is the current document content",
-      "As an AI assistant",
-      "As an AI language model",
-      "I'm analyzing the shortage data",
-      "I'll analyze this",
-      "You're reviewing",
-      "You are a helpful assistant",
-      "Based on the drug shortage data provided",
-      "I need to generate",
-      "The following is a comprehensive",
-      "Format your response with clear headings",
-      "format the information",
-      "from the context",
-      "prompt:",
+      "Format the document in Markdown",
       "system instruction",
-      "AI assistant",
-      "language model",
-      "model:",
-      "output:",
-      "assistant:",
-      "I am a"
+      "You are a helpful assistant",
+      "You are analyzing drug shortage data"
     ];
     
-    // Check for a system prompt
-    const containsSystemPrompt = promptPatterns.some(pattern => 
-      content.toLowerCase().includes(pattern.toLowerCase())
-    );
+    // Higher confidence system prompt patterns (instructions to the AI)
+    const systemInstructionPatterns = [
+      "You are a helpful assistant that",
+      "You are an AI assistant that",
+      "As an AI language model, your task is to",
+      "As an AI assistant, you will",
+      "prompt:",
+      "I want you to analyze",
+      "I need you to generate",
+      "Use the complete drug shortage data to create"
+    ];
     
-    // Check for JSON data structures more comprehensively
+    // Check for JSON data structures
     const containsRawJSON = 
       content.includes('{"id":') || 
       content.includes('"type":"shortage"') ||
@@ -269,9 +250,9 @@ Return ONLY the complete updated document content.`;
       content.includes('"dosage_form":') ||
       content.includes('"report_id":') || 
       content.includes('"drug_name":') ||
-      content.match(/\{(\s*"[^"]+"\s*:)/g) || // Match patterns like { "key":
+      (content.match(/\{(\s*"[^"]+"\s*:)/g) && content.match(/\{(\s*"[^"]+"\s*:)/g).length > 2) || // Multiple JSON objects
       (content.includes('{') && content.includes('}') && 
-       (content.includes('"') || content.includes("'")));
+       content.split('{').length > 3); // Multiple JSON blocks
     
     // Check if this looks like a full document
     const isFullDocument = 
@@ -283,8 +264,18 @@ Return ONLY the complete updated document content.`;
        content.includes("## Product Details") || 
        content.includes("## Shortage Impact Assessment"));
     
+    // High confidence system instruction check
+    const isDefinitelySystemInstruction = systemInstructionPatterns.some(pattern => 
+      content.includes(pattern)
+    );
+    
+    // Less strict prompt pattern check - require at least 2 patterns or a long message
+    const mightBePromptPattern = 
+      (promptPatterns.filter(pattern => content.includes(pattern)).length >= 2) ||
+      (promptPatterns.some(pattern => content.includes(pattern)) && content.length > 500);
+    
     // Special case: Don't show system prompts with raw data
-    if (containsSystemPrompt && containsRawJSON) {
+    if ((isDefinitelySystemInstruction || mightBePromptPattern) && containsRawJSON) {
       if (sessionType === "info") {
         return "I'm analyzing the drug shortage data to provide you with comprehensive information. I'll be ready to answer your questions momentarily.";
       } else {
@@ -303,15 +294,15 @@ Return ONLY the complete updated document content.`;
     }
     
     // Remove common AI prefixes like "As an AI assistant..." or "I'm analyzing..."
-    if (content.match(/^(As an AI|I'm an AI|I am an AI|As a language model|I'm analyzing|I'll analyze|Let me analyze)/i)) {
-      const cleanedContent = content.replace(/^(As an AI[^\.]+\.|I'm an AI[^\.]+\.|I am an AI[^\.]+\.|As a language model[^\.]+\.|I'm analyzing[^\.]+\.|I'll analyze[^\.]+\.|Let me analyze[^\.]+\.)\s*/i, '');
+    if (content.match(/^(As an AI assistant|I'm an AI assistant|I am an AI assistant|As a language model)/)) {
+      const cleanedContent = content.replace(/^(As an AI assistant[^\.]+\.|I'm an AI assistant[^\.]+\.|I am an AI assistant[^\.]+\.|As a language model[^\.]+\.)\s*/, '');
       if (cleanedContent !== content) {
         return cleanedContent;
       }
     }
     
-    // If it's a system prompt, replace with a simple message
-    if (containsSystemPrompt) {
+    // Only filter definite system instructions, not just any message with prompt-like content
+    if (isDefinitelySystemInstruction) {
       if (sessionType === "info") {
         return "I'm analyzing the drug shortage data to provide a comprehensive response...";
       } else {
@@ -319,8 +310,8 @@ Return ONLY the complete updated document content.`;
       }
     }
     
-    // If it still has JSON, try to extract meaningful text or replace it entirely
-    if (containsRawJSON) {
+    // If it has extensive raw JSON that dominates the message, clean it
+    if (containsRawJSON && content.includes('"') && (content.split('"').length > 20)) {
       // Try to find any human-readable text outside of JSON
       const cleanedContent = content
         .replace(/\{[^{}]*\}/g, '') // Remove simple JSON objects

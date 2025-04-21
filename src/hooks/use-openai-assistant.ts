@@ -156,11 +156,24 @@ export const useOpenAIAssistant = ({
         isRestoredSession ||
         (documentContent && documentContent.length > 0)
       ) {
+        // If we're a document assistant but won't generate, still mark as initialized
+        if (assistantType === "document" && !isInitialized && !isLoading) {
+          console.log("Document assistant not generating document but marking as initialized");
+          setIsInitialized(true);
+          if (onStateChange) {
+            onStateChange({ isInitialized: true, isLoading: false });
+          }
+        }
         return;
       }
       
+      console.log("Starting document generation from drug data");
       setHasAttemptedGeneration(true);
       setIsLoading(true);
+      
+      if (onStateChange) {
+        onStateChange({ isInitialized: false, isLoading: true });
+      }
       
       try {
         // We'll use a simplified message for the UI instead of showing the actual prompt
@@ -190,6 +203,7 @@ Use the complete drug shortage data to create a professional, detailed, and acti
 Include evidence-based recommendations where possible.
 Format the document in Markdown with clear headings and sections.`;
 
+        console.log("Calling OpenAI assistant function to generate document");
         const { data, error } = await supabase.functions.invoke("openai-assistant", {
           body: {
             assistantType: "document",
@@ -219,14 +233,20 @@ Format the document in Markdown with clear headings and sections.`;
           return;
         }
         
+        console.log("Document generation successful, received response");
+        
         // Set thread ID for future messages
         if (data.threadId) {
           setThreadId(data.threadId);
+          console.log("Thread ID set:", data.threadId);
         }
         
         // Update document via callback
         if (onDocumentUpdate && data.message) {
+          console.log("Calling onDocumentUpdate with document content");
           onDocumentUpdate(data.message);
+        } else {
+          console.warn("Document update callback missing or no message content received");
         }
         
         // Update the chat with a confirmation message instead of showing system instructions
@@ -249,6 +269,7 @@ Format the document in Markdown with clear headings and sections.`;
               p_thread_id: data.threadId,
               p_messages: JSON.stringify([completionMessage])
             });
+            console.log("Saved conversation to database");
           } catch (saveErr) {
             console.error("Error saving conversation:", saveErr);
           }
@@ -257,10 +278,17 @@ Format the document in Markdown with clear headings and sections.`;
         // After first generation, we don't need to send raw data anymore
         setShouldSendRawData(false);
         setIsInitialized(true);
+        
+        if (onStateChange) {
+          onStateChange({ isInitialized: true, isLoading: false });
+        }
       } catch (err: any) {
         console.error("Error generating document:", err);
         setError(err.message || "An error occurred");
         toast.error("Error generating document. Please try again later.");
+        if (onStateChange) {
+          onStateChange({ isInitialized: false, isLoading: false });
+        }
       } finally {
         setIsLoading(false);
       }
@@ -278,7 +306,9 @@ Format the document in Markdown with clear headings and sections.`;
     allShortageData,
     isRestoredSession,
     documentContent,
-    shouldSendRawData
+    shouldSendRawData,
+    onStateChange,
+    isInitialized
   ]);
 
   // This effect handles loading drug data for the information assistant
@@ -330,6 +360,9 @@ Format the document in Markdown with clear headings and sections.`;
             
             // Set initialized to true and return early to prevent new generation
             setIsInitialized(true);
+            if (onStateChange) {
+              onStateChange({ isInitialized: true, isLoading: false });
+            }
             return;
           }
         } catch (err) {
@@ -352,8 +385,13 @@ Format the document in Markdown with clear headings and sections.`;
         !isLoading &&
         !isRestoredSession // Don't initialize if we're in a restored session
       ) {
+        console.log("Initializing shortage assistant with comprehensive analysis");
         setHasAttemptedGeneration(true);
         setIsLoading(true);
+        
+        if (onStateChange) {
+          onStateChange({ isInitialized: false, isLoading: true });
+        }
         
         try {
           // Add a placeholder message showing we're analyzing data (to be displayed to user)
@@ -366,8 +404,6 @@ Format the document in Markdown with clear headings and sections.`;
           
           // Set the placeholder message
           setMessages([initialMessage]);
-          
-          console.log("Initializing shortage assistant with comprehensive analysis");
           
           const initialPrompt = `Generate a comprehensive analysis of the ${drugShortageData?.brand_name || drugShortageData?.drug_name || "drug"} shortage.
 Include the following information:
@@ -399,6 +435,11 @@ Format your response with clear headings and bullet points where appropriate.`;
           if (error) {
             console.error("Error creating assistant thread:", error);
             toast.error("Error initializing assistant. Using offline mode.");
+            
+            setIsInitialized(true); // Still mark as initialized so user can interact
+            if (onStateChange) {
+              onStateChange({ isInitialized: true, isLoading: false });
+            }
           } else {
             // Set thread ID for future messages
             if (data.threadId) {
@@ -420,17 +461,33 @@ Format your response with clear headings and bullet points where appropriate.`;
               // Save this conversation to the database
               saveConversation([responseMessage]);
             }
+            
+            // After initialization, we don't need to send raw data anymore
+            setShouldSendRawData(false);
+            // Set initialized to true only AFTER we've processed the response
+            setIsInitialized(true);
+            if (onStateChange) {
+              onStateChange({ isInitialized: true, isLoading: false });
+            }
           }
-          
-          // After initialization, we don't need to send raw data anymore
-          setShouldSendRawData(false);
-          // Set initialized to true only AFTER we've processed the response
-          setIsInitialized(true);
         } catch (err: any) {
           console.error("Error initializing info assistant:", err);
           toast.error("Error connecting to assistant service. Using offline mode.");
+          
+          setIsInitialized(true); // Still mark as initialized to allow user interaction
+          if (onStateChange) {
+            onStateChange({ isInitialized: true, isLoading: false });
+          }
         } finally {
           setIsLoading(false);
+        }
+      } else if (assistantType === "shortage" && !isInitialized && !isLoading) {
+        // For shortage assistants that don't need generation but aren't initialized,
+        // mark them as initialized to allow user interaction
+        console.log("Shortage assistant has no data to generate but marking as initialized");
+        setIsInitialized(true);
+        if (onStateChange) {
+          onStateChange({ isInitialized: true, isLoading: false });
         }
       }
     };
@@ -448,7 +505,8 @@ Format your response with clear headings and bullet points where appropriate.`;
     allShortageData,
     sessionId,
     isRestoredSession,
-    shouldSendRawData
+    shouldSendRawData,
+    onStateChange
   ]);
 
   useEffect(() => {
@@ -592,79 +650,98 @@ Format your response with clear headings and bullet points where appropriate.`;
 
   // Enhanced function to send messages with document context
   const sendMessage = async (content: string) => {
+    if (!content.trim() || (isLoading && !isInitialized)) {
+      throw new Error("Cannot send message while loading or not initialized");
+    }
+    
+    // Set loading state
+    setIsLoading(true);
+    
+    console.log(`Sending message for ${assistantType} assistant. Document edit: ${content.includes("Please edit")}`);
+    
+    // Create unique message ID
+    const messageId = Date.now().toString();
+    
     try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Log request details
-      console.log(`Sending message for ${assistantType} assistant. Document edit: ${content.includes("Please edit")}`);
-      
-      // Create a new message for UI
-      const userMessage = addMessage("user", content);
+      // Add user message to chat
+      const userMessage = {
+        id: messageId,
+        role: "user" as const,
+        content,
+        timestamp: new Date(),
+      };
       
       // Check if this is a document edit request
-      const isDocEdit = (assistantType === "document" && 
+      const isDocEdit = (assistantType === "document" &&
         (content.includes("Please edit the document") || 
-         content.includes("update the document") || 
-         content.includes("change the document") ||
-         content.includes("edit the document") ||
-         content.toLowerCase().includes("modify the document")));
+         content.toLowerCase().includes("update the document")));
       
-      // For document editing, ensure the LLM has context of the current document
-      let contextualContent = content;
+      // Update messages in UI (optimistic update)
+      addMessage("user", content);
       
-      if (isDocEdit && documentContent) {
-        console.log("Adding document content context to edit request");
-        contextualContent = `${content}\n\nCurrent document content:\n\n${documentContent}`;
+      // If we don't have a thread ID yet, we need to initialize
+      if (!threadId && !isRestoredSession) {
+        // We can't generate a thread here, so return a fallback message
+        console.log("No thread ID available and not initialized yet");
       }
       
-      // Make the API call
+      // Return early with a message if we're in offline mode
+      if (!threadId) {
+        console.log("No thread ID available, returning fallback response");
+        
+        const fallbackMessage = {
+          id: Date.now().toString(),
+          role: "assistant" as const,
+          content: "I'm unable to connect to the AI service at this time. Please try again later.",
+          timestamp: new Date(),
+        };
+        
+        // Add fallback message
+        setMessages(prev => [...prev, fallbackMessage]);
+        
+        // Save conversation
+        saveConversation();
+        
+        return fallbackMessage.content;
+      }
+      
+      // Send the message to the assistant
       const { data, error } = await supabase.functions.invoke("openai-assistant", {
         body: {
           assistantType,
-          messages: [{
-            role: "user",
-            content: contextualContent // Send contextual content with document if needed
-          }],
-          drugData: drugShortageData,
-          allShortageData: allShortageData || [],
-          documentContent: isDocEdit ? documentContent : undefined, // Only send document when editing
+          messages: [{ role: "user", content }],
           sessionId,
           threadId,
-          rawData: false, // Never send raw data for regular messages
-          isDocumentEdit: isDocEdit
+          drugData: drugShortageData,
+          allShortageData: allShortageData || [],
+          documentContent,
+          isDocumentEdit: isDocEdit,
+          rawData: false // Never send raw data for regular messages
         },
-      }).catch(err => {
-        console.error("Error invoking assistant function:", err);
-        throw new Error("Network error connecting to assistant service");
       });
       
+      // If there was an error, handle it
       if (error) {
-        console.error("Error calling OpenAI assistant:", error);
-        setError(error.message || "Failed to get response from assistant");
-        toast.error("Failed to get response from AI assistant");
+        console.error("Error sending message:", error);
         
-        // Add a fallback message
-        const fallbackMessage = addMessage("assistant", "I'm sorry, I couldn't process your request due to a connection issue. Please try again later.");
-        saveConversation([userMessage, fallbackMessage]);
-        return;
-      }
-      
-      if (data && data.error) {
-        console.error("Error from OpenAI assistant:", data.error);
-        setError(data.error);
-        toast.error(data.error || "Error processing your request");
+        const errorMessage = {
+          id: Date.now().toString(),
+          role: "assistant" as const,
+          content: "I'm sorry, there was an error processing your request. Please try again.",
+          timestamp: new Date(),
+        };
         
-        // Add a fallback message
-        const fallbackMessage = addMessage("assistant", "I'm sorry, there was an error processing your request. Please try again with a different question.");
-        saveConversation([userMessage, fallbackMessage]);
-        return;
+        // Add error message
+        setMessages(prev => [...prev, errorMessage]);
+        
+        // Save conversation
+        saveConversation();
+        
+        // Return error message
+        return errorMessage.content;
       }
       
-      if (data && data.threadId && !threadId) {
-        setThreadId(data.threadId);
-      }
-      
+      // Handle the response
       if (data && data.message) {
         let assistantResponse = data.message;
         let chatResponse = data.message;
@@ -709,26 +786,61 @@ Format your response with clear headings and bullet points where appropriate.`;
           }
         }
         
-        // Add the formatted chat response
-        const assistantMessage = addMessage("assistant", chatResponse);
+        // Add AI response to messages
+        const responseMessage = {
+          id: Date.now().toString(),
+          role: "assistant" as const,
+          content: chatResponse, // Use the chat-friendly version for display
+          timestamp: new Date(),
+        };
         
-        // Save conversation after adding new messages
-        saveConversation([userMessage, assistantMessage]);
+        // Update messages
+        setMessages(prev => [...prev, responseMessage]);
         
-        return assistantResponse;
+        // Save conversation
+        saveConversation();
+        
+        // Return the full response for document purposes, or the chat response otherwise
+        return isDocEdit || isDocumentContent(assistantResponse) ? assistantResponse : chatResponse;
       } else {
-        // Fallback message if no response
-        const fallbackMessage = addMessage("assistant", "I'm sorry, I wasn't able to generate a proper response. Please try rephrasing your question.");
-        saveConversation([userMessage, fallbackMessage]);
+        console.error("No message in response:", data);
+        
+        // If no message was returned but we didn't get an error, add a fallback message
+        const fallbackMessage = {
+          id: Date.now().toString(),
+          role: "assistant" as const,
+          content: "I'm sorry, I couldn't generate a response. Please try again with a different question.",
+          timestamp: new Date(),
+        };
+        
+        // Add fallback message
+        setMessages(prev => [...prev, fallbackMessage]);
+        
+        // Save conversation
+        saveConversation();
+        
+        // Return fallback message
+        return fallbackMessage.content;
       }
-    } catch (err: any) {
-      console.error("Error in sendMessage:", err);
-      setError(err.message || "An error occurred");
-      toast.error("Failed to communicate with AI assistant");
+    } catch (err) {
+      console.error("Error in send message:", err);
       
-      // Add a fallback message
-      const errorMessage = addMessage("assistant", "I apologize, but I encountered a technical error. Please try again later.");
-      saveConversation([addMessage("user", content), errorMessage]);
+      // Add error message
+      const errorMessage = {
+        id: Date.now().toString(),
+        role: "assistant" as const,
+        content: "I'm sorry, something went wrong. Please try again later.",
+        timestamp: new Date(),
+      };
+      
+      // Update messages
+      setMessages(prev => [...prev, errorMessage]);
+      
+      // Save conversation
+      saveConversation();
+      
+      // Return error message
+      return errorMessage.content;
     } finally {
       setIsLoading(false);
     }
