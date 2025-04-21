@@ -216,6 +216,17 @@ Return ONLY the complete updated document content.`;
 
   // Format chat message for display
   const formatChatMessage = (content: string) => {
+    // Hide system prompts
+    if (content.includes("Generate a comprehensive") || 
+        content.includes("Please edit the document") ||
+        content.includes("Include the following") ||
+        content.includes("Background of the shortage") ||
+        content.includes("Return ONLY the complete updated") ||
+        content.includes("Format your response with") ||
+        content.includes("Format the document in Markdown")) {
+      return "I'm analyzing the drug shortage data to create a detailed response...";
+    }
+    
     // Special handling for document edits - convert full document to a response message
     if (
       sessionType === "document" && 
@@ -236,13 +247,6 @@ Return ONLY the complete updated document content.`;
       return "I've updated the document according to your instructions. The changes have been applied to the document editor.";
     }
     
-    // Hide prompts for document generation
-    if (content.includes("Generate a comprehensive drug shortage management plan") ||
-        content.includes("Generate a comprehensive analysis of the") ||
-        content.includes("Return ONLY the complete updated document content")) {
-      return "I'm analyzing the drug shortage data to create a detailed response...";
-    }
-    
     // Check if content contains JSON-like structures or API responses
     if (
       content.includes('{"data":') || 
@@ -251,7 +255,9 @@ Return ONLY the complete updated document content.`;
       content.includes('"api":') ||
       content.includes('"discontinued":') ||
       content.includes('"drug_shortage":') ||
-      content.includes('"drug_name":')
+      content.includes('"drug_name":') ||
+      content.includes("shortage_id:") ||
+      content.includes("reported_date:")
     ) {
       // Identify and remove JSON blocks from content
       let lines = content.split("\n");
@@ -267,7 +273,9 @@ Return ONLY the complete updated document content.`;
             line.includes('"api":') ||
             line.includes('"discontinued":') ||
             line.includes('"id":') ||
-            line.includes('"drug_name":')
+            line.includes('"drug_name":') ||
+            line.includes('"created_at":') ||
+            line.includes('"updated_at":')
           )) ||
           // Code block indicators
           line.includes('```json') || 
@@ -276,7 +284,9 @@ Return ONLY the complete updated document content.`;
           line.match(/^\s*[\[\]\{\}]\s*$/) ||
           // Data dump markers
           line.includes('shortage_id:') ||
-          line.includes('reported_date:')
+          line.includes('reported_date:') ||
+          line.includes('drug_code:') ||
+          line.includes('drug_identification_number:')
         );
       });
       
@@ -285,7 +295,7 @@ Return ONLY the complete updated document content.`;
       
       // If filtering removed everything or most of the content, provide a summary
       if (filteredContent.trim() === '' || filteredContent.length < content.length * 0.3) {
-        return "I've analyzed the drug shortage data and I'm ready to help answer your questions.";
+        return "I've analyzed the drug shortage data and I'm ready to help answer your questions about this medication shortage.";
       }
       
       return filteredContent;

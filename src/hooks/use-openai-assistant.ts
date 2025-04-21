@@ -269,6 +269,66 @@ Format the document in Markdown with clear headings and sections.`;
   // This effect handles loading drug data for the information assistant
   useEffect(() => {
     const initializeInfoAssistant = async () => {
+      // Check if this is a restored session from the database first
+      if (sessionId && !isInitialized && !hasAttemptedGeneration) {
+        try {
+          // Check if we already have a conversation in the database
+          const { data: existingConversation, error } = await supabase
+            .rpc('get_ai_conversation', { 
+              p_session_id: sessionId, 
+              p_assistant_type: assistantType 
+            });
+            
+          if (existingConversation && existingConversation.length > 0 && existingConversation[0].messages) {
+            console.log("Found existing conversation, using that instead of generating new content");
+            
+            // Mark as restored session to prevent further initialization
+            setIsRestoredSession(true);
+            setHasAttemptedGeneration(true);
+            
+            // Parse messages if needed and set initial state
+            let existingMessages;
+            if (typeof existingConversation[0].messages === 'string') {
+              try {
+                existingMessages = JSON.parse(existingConversation[0].messages);
+              } catch (e) {
+                existingMessages = [];
+              }
+            } else if (Array.isArray(existingConversation[0].messages)) {
+              existingMessages = existingConversation[0].messages;
+            }
+            
+            if (existingMessages && existingMessages.length > 0) {
+              const formattedMessages = existingMessages.map((msg: any) => ({
+                id: msg.id || Date.now().toString(),
+                role: msg.role as "user" | "assistant",
+                content: msg.content,
+                timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
+              }));
+              
+              // Set messages and thread ID
+              setMessages(formattedMessages);
+              if (existingConversation[0].thread_id) {
+                setThreadId(existingConversation[0].thread_id);
+              }
+            }
+            
+            // Set initialized to true and return early to prevent new generation
+            setIsInitialized(true);
+            return;
+          }
+        } catch (err) {
+          console.error("Error checking for existing conversations:", err);
+        }
+      }
+      
+      // Only proceed with generation if:
+      // 1. We're dealing with the shortage assistant type
+      // 2. We haven't attempted generation yet
+      // 3. We have drug data available
+      // 4. We're not already initialized
+      // 5. We're not currently loading
+      // 6. This isn't a restored session from another loading method
       if (
         assistantType === "shortage" && 
         !hasAttemptedGeneration && 
@@ -520,7 +580,8 @@ Format your response with clear headings and bullet points where appropriate.`;
         (content.includes("Please edit the document") || 
          content.includes("update the document") || 
          content.includes("change the document") ||
-         content.includes("edit the document")));
+         content.includes("edit the document") ||
+         content.toLowerCase().includes("modify the document")));
       
       // For document editing, ensure the LLM has context of the current document
       let contextualContent = content;
@@ -581,18 +642,36 @@ Format your response with clear headings and bullet points where appropriate.`;
         let assistantResponse = data.message;
         let chatResponse = data.message;
         
-        // For document edits or creation, handle the response differently in chat vs actual document content
-        if (assistantType === "document" && 
-            (isDocEdit || 
-             assistantResponse.startsWith("# ") || 
-             assistantResponse.includes("## Executive Summary"))) {
-          
-          // For document edits, show a standardized chat response
+        // Function to detect if response contains document structure
+        const isDocumentContent = (text: string) => {
+          return assistantType === "document" && (
+            // Full document or sections
+            text.startsWith("# ") || 
+            text.includes("## Executive Summary") ||
+            text.includes("## Product Details") ||
+            text.includes("## Shortage Impact Assessment") ||
+            text.includes("## Therapeutic Alternatives") ||
+            text.includes("## Conservation Strategies") ||
+            
+            // Markdown formatting indicates document
+            (text.split("\n").filter(line => line.startsWith("#")).length >= 3) ||
+            
+            // Document language
+            text.includes("Drug Shortage Management Plan") ||
+            
+            // Explicit document edit confirmation
+            text.includes("I've updated the document")
+          );
+        };
+        
+        // For document edits or content, handle appropriately
+        if (isDocEdit || isDocumentContent(assistantResponse)) {
+          // For document edits, use standardized message
           if (isDocEdit) {
             chatResponse = "I've updated the document according to your instructions. The changes have been applied to the document editor.";
-          } else {
-            // For document creations or explanations that include document content
-            chatResponse = "I've prepared a response based on the drug shortage data. If this looks good, it has been automatically applied to the document.";
+          } else if (isDocumentContent(assistantResponse)) {
+            // For content that looks like a document but wasn't an explicit edit
+            chatResponse = "I've prepared content for your document based on the drug shortage data. The changes have been automatically applied to the document.";
           }
           
           console.log("Document content detected, updating document");

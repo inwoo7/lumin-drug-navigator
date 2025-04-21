@@ -104,18 +104,47 @@ const SessionPage = () => {
   useEffect(() => {
     const preloadSession = async () => {
       if (!sessionId) return;
-      setIsInitialLoading(true);
       
       try {
         console.log("Preloading session data and document...");
         
-        // Load document first
-        await loadDocument();
+        // Check if this is an existing session first
+        const { data: existingDoc } = await supabase
+          .rpc('get_session_document', { p_session_id: sessionId });
+          
+        const hasExistingDocument = existingDoc && existingDoc.length > 0 && existingDoc[0]?.content;
         
-        // For sessions without selectedReportData, don't wait for assistants
-        if (!selectedReportData) {
+        // Check if this session already has conversations
+        const { data: existingConversations } = await supabase
+          .rpc('get_ai_conversation', { 
+            p_session_id: sessionId, 
+            p_assistant_type: "shortage" 
+          });
+        
+        const hasExistingConversation = existingConversations && 
+                                        existingConversations.length > 0 && 
+                                        existingConversations[0]?.messages;
+        
+        if (hasExistingDocument && hasExistingConversation) {
+          // For existing sessions with data, we can skip the loading screen
+          console.log("Existing session with data found, skipping loading screen");
+          setIsInitialLoading(false);
           setIsInfoAssistantReady(true);
           setIsDocumentAssistantReady(true);
+          
+          // Still load the document
+          await loadDocument();
+        } else {
+          // For new sessions or sessions without complete data, show loading
+          setIsInitialLoading(true);
+          await loadDocument();
+          
+          // For sessions without selectedReportData, don't wait for assistants
+          if (!selectedReportData) {
+            setIsInfoAssistantReady(true);
+            setIsDocumentAssistantReady(true);
+            setIsInitialLoading(false);
+          }
         }
       } catch (err) {
         console.error("Error preloading session:", err);
