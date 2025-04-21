@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Button } from "@/components/ui/button";
+import { Button as IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
@@ -216,94 +216,125 @@ Return ONLY the complete updated document content.`;
 
   // Format chat message for display
   const formatChatMessage = (content: string) => {
-    // Check if this message contains a system prompt or raw data
-    const containsSystemPrompt = content.includes("Generate a comprehensive") || 
-                                 content.includes("Please edit the document") ||
-                                 content.includes("Include the following information") || 
-                                 content.includes("Background of the shortage") ||
-                                 content.includes("Format your response") ||
-                                 content.includes("You are analyzing drug shortage data");
-                                 
-    const containsRawJSON = content.includes('{"id":') || 
-                           content.includes('"type":"shortage"') ||
-                           content.includes('"brand_name":') ||
-                           content.includes('"dosage_form":') ||
-                           content.includes('"report_id":') ||
-                           content.includes('raw JSON format');
+    // First, detect if this contains any common prompt patterns
+    const promptPatterns = [
+      "Generate a comprehensive", 
+      "Please edit the document",
+      "Include the following information",
+      "Background of the shortage",
+      "Format your response",
+      "You are analyzing drug shortage data",
+      "therapeutic alternatives",
+      "conservation strategies",
+      "patient prioritization",
+      "implementation plan",
+      "Format the document in Markdown",
+      "Return ONLY the complete updated",
+      "This is the specific drug data",
+      "Here is comprehensive data about all related shortages",
+      "raw JSON format",
+      "is the current document content",
+      "As an AI assistant",
+      "As an AI language model",
+      "I'm analyzing the shortage data",
+      "I'll analyze this",
+      "You're reviewing",
+      "You are a helpful assistant",
+      "Based on the drug shortage data provided",
+      "I need to generate",
+      "The following is a comprehensive",
+      "Format your response with clear headings",
+      "format the information",
+      "from the context",
+      "prompt:",
+      "system instruction",
+      "AI assistant",
+      "language model",
+      "model:",
+      "output:",
+      "assistant:",
+      "I am a"
+    ];
     
-    // If this message contains both system prompts and raw data, completely hide it
+    // Check for a system prompt
+    const containsSystemPrompt = promptPatterns.some(pattern => 
+      content.toLowerCase().includes(pattern.toLowerCase())
+    );
+    
+    // Check for JSON data structures more comprehensively
+    const containsRawJSON = 
+      content.includes('{"id":') || 
+      content.includes('"type":"shortage"') ||
+      content.includes('"brand_name":') ||
+      content.includes('"dosage_form":') ||
+      content.includes('"report_id":') || 
+      content.includes('"drug_name":') ||
+      content.match(/\{(\s*"[^"]+"\s*:)/g) || // Match patterns like { "key":
+      (content.includes('{') && content.includes('}') && 
+       (content.includes('"') || content.includes("'")));
+    
+    // Check if this looks like a full document
+    const isFullDocument = 
+      (content.startsWith("#") && 
+       (content.includes("# Drug Shortage Management Plan") || 
+        content.includes("Executive Summary") || 
+        content.includes("Product Details"))) ||
+      (content.includes("## Executive Summary") || 
+       content.includes("## Product Details") || 
+       content.includes("## Shortage Impact Assessment"));
+    
+    // Special case: Don't show system prompts with raw data
     if (containsSystemPrompt && containsRawJSON) {
-      return "I'm analyzing the drug shortage data to provide you with comprehensive information. I'll be ready to answer your questions momentarily.";
+      if (sessionType === "info") {
+        return "I'm analyzing the drug shortage data to provide you with comprehensive information. I'll be ready to answer your questions momentarily.";
+      } else {
+        return "I'm preparing document content based on the drug shortage data. This may take a moment...";
+      }
     }
     
-    // Special handling for document edits - convert full document to a response message
-    if (
-      sessionType === "document" && 
-      (
-        // Check for markdown headers that indicate a document
-        (content.startsWith("#") && 
-         (content.includes("# Drug Shortage Management Plan") || 
-          content.includes("Executive Summary") || 
-          content.includes("Product Details"))) ||
-        // Check for document structure with sections
-        (content.includes("## Executive Summary") || 
-         content.includes("## Product Details") || 
-         content.includes("## Shortage Impact Assessment")) ||
-        // Check for completed document edit message
-        content.includes("I've updated the document according to your instructions")
-      )
-    ) {
+    // Special case: Full document in chat should be replaced with a message
+    if (sessionType === "document" && isFullDocument) {
       return "I've updated the document according to your instructions. The changes have been applied to the document editor.";
     }
     
-    // Hide any system prompts, instructions or raw data completely
-    if (content.includes("Generate a comprehensive") || 
-        content.includes("Please edit the document") ||
-        content.includes("Include the following") ||
-        content.includes("Background of the shortage") ||
-        content.includes("Return ONLY the complete updated") ||
-        content.includes("Format your response with") ||
-        content.includes("Format the document in Markdown") ||
-        content.includes("You are analyzing drug shortage data") ||
-        content.includes("raw JSON format") ||
-        content.includes("Please provide a detailed analysis")) {
-      return "I'm analyzing the drug shortage data to create a detailed response...";
+    // Special case: Document edit confirmation should be simplified
+    if (content.includes("I've updated the document") && content.length > 300) {
+      return "I've updated the document according to your instructions. The changes have been applied to the document editor.";
     }
     
-    // Filter out any JSON data sections completely
-    if (content.includes('{"id":') || 
-        content.includes('"type":"shortage"') || 
-        content.includes('"report_id":') || 
-        content.includes('"brand_name":')) {
-      // Create a completely filtered version by removing JSON sections
-      let filteredContent = "";
-      
-      // Only keep complete sentences that don't contain JSON
-      const sentences = content.split(/(?<=[.!?])\s+/);
-      for (const sentence of sentences) {
-        if (!sentence.includes('":') && 
-            !sentence.includes('"id":') && 
-            !sentence.includes('"type":') && 
-            !sentence.includes('"report_id":') && 
-            !sentence.includes("JSON") && 
-            !sentence.includes("[{")) {
-          filteredContent += sentence + " ";
-        }
+    // Remove common AI prefixes like "As an AI assistant..." or "I'm analyzing..."
+    if (content.match(/^(As an AI|I'm an AI|I am an AI|As a language model|I'm analyzing|I'll analyze|Let me analyze)/i)) {
+      const cleanedContent = content.replace(/^(As an AI[^\.]+\.|I'm an AI[^\.]+\.|I am an AI[^\.]+\.|As a language model[^\.]+\.|I'm analyzing[^\.]+\.|I'll analyze[^\.]+\.|Let me analyze[^\.]+\.)\s*/i, '');
+      if (cleanedContent !== content) {
+        return cleanedContent;
       }
-      
-      // Remove any code blocks
-      filteredContent = filteredContent.replace(/```[\s\S]*?```/g, "");
-      
-      // If filtering removed everything or most of the content, provide a summary
-      if (filteredContent.trim() === '' || 
-          filteredContent.length < 100 || 
-          filteredContent.length < content.length * 0.3) {
-        return "I've analyzed the drug shortage data and I'm ready to help answer your questions about this medication shortage.";
-      }
-      
-      return filteredContent.trim();
     }
     
+    // If it's a system prompt, replace with a simple message
+    if (containsSystemPrompt) {
+      if (sessionType === "info") {
+        return "I'm analyzing the drug shortage data to provide a comprehensive response...";
+      } else {
+        return "I'm processing your request for the document...";
+      }
+    }
+    
+    // If it still has JSON, try to extract meaningful text or replace it entirely
+    if (containsRawJSON) {
+      // Try to find any human-readable text outside of JSON
+      const cleanedContent = content
+        .replace(/\{[^{}]*\}/g, '') // Remove simple JSON objects
+        .replace(/\{.*\}/gs, '')    // Remove multi-line JSON objects
+        .trim();
+        
+      if (cleanedContent.length > 50) {
+        return cleanedContent;
+      } else {
+        return "I'm processing the drug shortage data to prepare a response for you.";
+      }
+    }
+    
+    // Return the original content if no issues detected
     return content;
   };
 
@@ -341,14 +372,14 @@ Return ONLY the complete updated document content.`;
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button
+                              <IconButton
                                 onClick={() => handleCopyMessage(message.content)}
                                 size="icon"
                                 variant="ghost"
                                 className="h-7 w-7 p-0"
                               >
                                 <Copy className="h-3 w-3" />
-                              </Button>
+                              </IconButton>
                             </TooltipTrigger>
                             <TooltipContent>
                               <p>Copy to clipboard</p>
@@ -391,13 +422,13 @@ Return ONLY the complete updated document content.`;
             className={`min-h-[60px] resize-none ${isEditMode ? "border-blue-300 focus-visible:ring-blue-400" : ""}`}
             disabled={showLoadingIndicator}
           />
-          <Button
+          <IconButton
             className={`${isEditMode ? "bg-blue-600 hover:bg-blue-700" : "bg-lumin-teal hover:bg-lumin-teal/90"} h-10 px-4`}
             disabled={inputMessage.trim() === "" || showLoadingIndicator}
             onClick={handleSendMessage}
           >
             <SendIcon className="h-4 w-4" />
-          </Button>
+          </IconButton>
         </div>
       </CardFooter>
     </Card>

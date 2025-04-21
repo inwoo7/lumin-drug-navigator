@@ -1,13 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { Download, FileText, AlertTriangle, Check, Save, Loader2, FileDown } from "lucide-react";
+import { Download, FileText, AlertTriangle, Check, Save } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { SessionDocument } from "@/types/supabase-rpc";
-import html2pdf from 'html2pdf.js';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 interface DocumentEditorProps {
   drugName: string;
@@ -22,81 +23,92 @@ const DocumentEditor = ({
   onContentChange,
   initialContent
 }: DocumentEditorProps) => {
-  const [content, setContent] = useState<string>(initialContent || "");
-  const [previewContent, setPreviewContent] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<"edit" | "preview">("edit");
+  const [content, setContent] = useState("");
+  const [previewContent, setPreviewContent] = useState("");
+  const [activeTab, setActiveTab] = useState("edit");
   const [isSaving, setIsSaving] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isExporting, setIsExporting] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [isPdfExporting, setIsPdfExporting] = useState(false);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const loadDocument = async () => {
       if (!sessionId) {
-        initTemplate();
+        initializeWithTemplate();
         return;
       }
-
+      
       try {
-        const { data, error } = await supabase
+        const { data: docs, error } = await supabase
           .rpc('get_session_document', { 
             p_session_id: sessionId 
-          });
-
+          }) as { data: SessionDocument[] | null, error: any };
+          
         if (error) {
           console.error("Error loading document:", error);
-          initTemplate();
-          return;
-        }
-
-        if (data && data.length > 0 && data[0]?.content) {
-          setContent(data[0].content);
+          if (initialContent) {
+            setContent(initialContent);
+          } else {
+            initializeWithTemplate();
+          }
+        } else if (docs && docs.length > 0 && docs[0]?.content) {
+          setContent(docs[0].content);
+        } else if (initialContent) {
+          setContent(initialContent);
         } else {
-          initTemplate();
+          initializeWithTemplate();
         }
         
-        setIsLoading(false);
+        setIsLoaded(true);
       } catch (err) {
         console.error("Error loading document:", err);
-        initTemplate();
+        initializeWithTemplate();
       }
     };
-
+    
     loadDocument();
-  }, [sessionId]);
+  }, [sessionId, initialContent]);
 
-  const initTemplate = () => {
-    const template = `# Clinical Guidance for ${drugName || "Drug"} Shortage
-## Background
-[Include background information about the drug shortage]
+  const initializeWithTemplate = () => {
+    const template = `# ${drugName} Shortage Management Plan
 
-## Alternative Agents
-[List alternative medications that can be used]
+## Overview
+[Enter information about the current shortage situation]
 
-## Recommendations
-[Provide specific recommendations for clinicians]
+## Therapeutic Alternatives
+[List alternative medications and dosing information]
 
-## References
-[Include references to supporting literature]
-  `;
+## Conservation Strategies
+[Document strategies to conserve available supply]
+
+## Patient Prioritization
+[Define criteria for patient prioritization]
+
+## Implementation Plan
+[Outline steps for implementing this plan]
+
+## Communication Strategy
+[Define how to communicate with staff and patients]
+
+## Resources and Contacts
+[List important resources and contact information]
+`;
     setContent(template);
-    setIsLoading(false);
+    setIsLoaded(true);
   };
 
   useEffect(() => {
-    if (isLoading) return;
+    if (!isLoaded) return;
     
     const htmlContent = content
-      .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-      .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-      .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-      .replace(/^#### (.*$)/gim, '<h4>$1</h4>')
-      .replace(/^##### (.*$)/gim, '<h5>$1</h5>')
-      .replace(/\n/gim, '<br>')
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2">$1</a>');
-    
+      .replace(/^# (.*$)/gm, '<h1 class="text-2xl font-bold mb-4 mt-6">$1</h1>')
+      .replace(/^## (.*$)/gm, '<h2 class="text-xl font-semibold mb-3 mt-5">$1</h2>')
+      .replace(/^### (.*$)/gm, '<h3 class="text-lg font-semibold mb-2 mt-4">$1</h3>')
+      .replace(/\n\n/g, '<br><br>')
+      .replace(/\[(.+?)\]/g, '<span class="text-gray-500 italic">$1</span>');
     setPreviewContent(htmlContent);
     onContentChange(content);
-  }, [content, onContentChange, isLoading]);
+  }, [content, onContentChange, isLoaded]);
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value);
@@ -130,239 +142,122 @@ const DocumentEditor = ({
     }
   };
 
-  const handleExportPDF = () => {
+  // Function to export the document as PDF in A4 size
+  const handleExportPDF = async () => {
+    // Switch to preview tab if not already there
+    if (activeTab !== "preview") {
+      setActiveTab("preview");
+      // Wait for the preview to render
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    
+    if (!previewRef.current) {
+      toast.error("Cannot generate PDF at this time");
+      return;
+    }
+    
+    setIsPdfExporting(true);
+    toast.loading("Generating PDF...", { id: "pdf-export" });
+    
     try {
-      setIsExporting(true);
-      toast.loading("Generating PDF...", { id: "pdf-export" });
+      // Create a temporary container for the PDF content
+      const pdfContainer = document.createElement('div');
+      pdfContainer.innerHTML = previewRef.current.innerHTML;
+      pdfContainer.style.width = '595px'; // A4 width in pixels at 72 DPI
+      pdfContainer.style.padding = '40px';
+      pdfContainer.style.fontFamily = 'Arial, sans-serif';
+      document.body.appendChild(pdfContainer);
       
-      // Check if content is empty or placeholder
-      if (!content || content.trim() === "") {
-        toast.error("Cannot export empty document", { id: "pdf-export" });
-        setIsExporting(false);
-        return;
+      // Generate PDF with A4 dimensions
+      const pdf = new jsPDF({
+        format: 'a4',
+        unit: 'pt',
+        orientation: 'portrait'
+      });
+      
+      // Get the content scaled to A4 size
+      const canvas = await html2canvas(pdfContainer, {
+        scale: 2, // Higher scale for better quality
+        useCORS: true,
+        logging: false
+      });
+      
+      // Remove the temporary container
+      document.body.removeChild(pdfContainer);
+      
+      // Add the captured content to the PDF
+      const imgData = canvas.toDataURL('image/png');
+      const imgWidth = 595; // A4 width in points
+      const imgHeight = canvas.height * imgWidth / canvas.width;
+      
+      // Add multiple pages if content is too long
+      let heightLeft = imgHeight;
+      let position = 0;
+      let pageHeight = 842; // A4 height in points
+      
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      
+      // Add new pages if content is too long
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
       }
       
-      console.log("Content being exported:", content.substring(0, 100) + "...");
+      // Save the PDF with the drug name
+      const filename = `${drugName.replace(/\s+/g, '-')}_Shortage_Management_Plan.pdf`;
+      pdf.save(filename);
       
-      // Create a dedicated element for PDF export to ensure proper formatting
-      const exportElement = document.createElement('div');
-      exportElement.className = 'pdf-export';
-      
-      // Process markdown content to ensure proper HTML conversion
-      let processedContent = content
-        .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-        .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-        .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-        .replace(/^#### (.*$)/gim, '<h4>$1</h4>')
-        .replace(/^##### (.*$)/gim, '<h5>$1</h5>')
-        .replace(/\n\n/gim, '</p><p>')
-        .replace(/\n/gim, '<br>')
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2">$1</a>');
-      
-      // Wrap content in paragraph tags if not already containing HTML tags
-      if (!processedContent.includes('<h1>') && !processedContent.includes('<p>')) {
-        processedContent = '<p>' + processedContent + '</p>';
-      }
-      
-      // Debug output
-      console.log("Original content length:", content.length);
-      console.log("Processed content length:", processedContent.length);
-      
-      // Apply professional styling to the PDF document
-      exportElement.innerHTML = `
-        <style>
-          @page {
-            size: A4;
-            margin: 0;
-          }
-          .pdf-container {
-            font-family: 'Arial', sans-serif;
-            color: #333;
-            line-height: 1.5;
-            padding: 20mm;
-            box-sizing: border-box;
-            width: 210mm; /* A4 width */
-            min-height: 297mm; /* A4 height */
-          }
-          h1 {
-            color: #005a87;
-            font-size: 22px;
-            margin-bottom: 15px;
-            padding-bottom: 7px;
-            border-bottom: 1px solid #ccc;
-          }
-          h2 {
-            color: #007bff;
-            font-size: 18px;
-            margin-top: 20px;
-            margin-bottom: 10px;
-          }
-          h3 {
-            color: #0069d9;
-            font-size: 16px;
-            margin-top: 15px;
-            margin-bottom: 8px;
-          }
-          p {
-            margin-bottom: 10px;
-          }
-          .page-header {
-            text-align: center;
-            margin-bottom: 20px;
-          }
-          .document-title {
-            font-size: 24px;
-            font-weight: bold;
-            color: #005a87;
-            margin-bottom: 5px;
-          }
-          .document-subtitle {
-            font-size: 16px;
-            color: #666;
-            margin-bottom: 20px;
-          }
-          .date {
-            text-align: right;
-            font-style: italic;
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 20px;
-          }
-          .placeholder {
-            color: #999;
-            font-style: italic;
-          }
-          .footer {
-            text-align: center;
-            font-size: 12px;
-            color: #666;
-            margin-top: 30px;
-            border-top: 1px solid #eee;
-            padding-top: 10px;
-          }
-        </style>
-        <div class="pdf-container">
-          <div class="page-header">
-            <div class="document-title">${drugName} Shortage Management Plan</div>
-            <div class="document-subtitle">Clinical Guidance Document</div>
-          </div>
-          <div class="date">Generated: ${new Date().toLocaleDateString()}</div>
-          <div class="document-content">
-            ${processedContent}
-          </div>
-          <div class="footer">
-            Generated by Lumin Drug Shortage Navigator | ${new Date().toLocaleDateString()} | Confidential 
-          </div>
-        </div>
-      `;
-      
-      // Temporarily append to body but hide it
-      exportElement.style.position = 'absolute';
-      exportElement.style.left = '-9999px';
-      document.body.appendChild(exportElement);
-      
-      // A4 size configuration
-      const options = {
-        margin: 0, // We're handling margins in the CSS
-        filename: `${drugName.replace(/\s+/g, '_')}_Shortage_Management_Plan.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { 
-          scale: 2, 
-          useCORS: true,
-          letterRendering: true
-        },
-        jsPDF: { 
-          unit: 'mm', 
-          format: 'a4', 
-          orientation: 'portrait',
-          compress: true
-        },
-        pagebreak: { mode: ['avoid-all', 'css', 'legacy'], before: '.page-break' }
-      };
-      
-      // Generate PDF with specified options
-      html2pdf()
-        .from(exportElement)
-        .set(options)
-        .save()
-        .then(() => {
-          // Clean up the temporary element
-          document.body.removeChild(exportElement);
-          toast.success("Document exported as PDF", { 
-            id: "pdf-export",
-            description: "Your document has been downloaded successfully.", 
-            icon: <Check className="h-4 w-4" /> 
-          });
-        })
-        .catch((err) => {
-          console.error("Error generating PDF:", err);
-          toast.error("Failed to generate PDF", { id: "pdf-export" });
-        })
-        .finally(() => {
-          setIsExporting(false);
-        });
+      toast.success("PDF exported successfully", { 
+        id: "pdf-export",
+        description: `Saved as ${filename}`,
+        icon: <Check className="h-4 w-4" />
+      });
     } catch (err) {
-      console.error("Error in PDF export:", err);
+      console.error("Error generating PDF:", err);
       toast.error("Failed to generate PDF", { id: "pdf-export" });
-      setIsExporting(false);
+    } finally {
+      setIsPdfExporting(false);
     }
   };
 
   return (
-    <Card className="flex flex-col h-full overflow-hidden">
-      <CardHeader className="p-4 gap-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <h2 className="text-lg font-semibold">Document Editor</h2>
-          </div>
-          <div className="flex space-x-2">
+    <Card className="h-full flex flex-col">
+      <CardHeader className="px-4 py-3 border-b flex flex-row items-center justify-between">
+        <CardTitle className="text-md">Document Editor</CardTitle>
+        <div className="flex gap-2">
+          {sessionId && (
             <Button
-              variant="outline"
               size="sm"
               onClick={handleSaveDocument}
               disabled={isSaving}
-              className="flex items-center gap-1"
+              variant="outline"
             >
               {isSaving ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Saving...</span>
-                </>
+                <>Saving</>
               ) : (
                 <>
-                  <Save className="h-4 w-4" />
-                  <span>Save</span>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save
                 </>
               )}
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExportPDF}
-              disabled={isExporting}
-              className="flex items-center gap-1"
-            >
-              {isExporting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Exporting...</span>
-                </>
-              ) : (
-                <>
-                  <FileDown className="h-4 w-4" />
-                  <span>Export PDF</span>
-                </>
-              )}
-            </Button>
-          </div>
+          )}
+          <Button
+            size="sm"
+            onClick={handleExportPDF}
+            className="bg-lumin-teal hover:bg-lumin-teal/90"
+            disabled={isPdfExporting}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            {isPdfExporting ? "Exporting..." : "Export PDF"}
+          </Button>
         </div>
       </CardHeader>
-      <CardContent className="flex-1 p-0 overflow-hidden">
-        <Tabs
-          value={activeTab}
-          onValueChange={(value) => setActiveTab(value as "edit" | "preview")}
-          className="flex flex-col h-full"
-        >
+      <CardContent className="flex-1 p-0 flex flex-col">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
           <div className="px-4 pt-2">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="edit">
@@ -396,7 +291,11 @@ const DocumentEditor = ({
           </TabsContent>
           
           <TabsContent value="preview" className="flex-1 p-4 mt-0 overflow-auto">
-            <div className="bg-white p-6 border rounded-md min-h-[400px] markdown-preview" dangerouslySetInnerHTML={{ __html: previewContent }} />
+            <div 
+              ref={previewRef}
+              className="bg-white p-6 border rounded-md min-h-[400px] markdown-preview" 
+              dangerouslySetInnerHTML={{ __html: previewContent }} 
+            />
           </TabsContent>
         </Tabs>
       </CardContent>
