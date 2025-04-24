@@ -1,4 +1,3 @@
-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -9,30 +8,28 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import AnimatedBackground from "@/components/auth/AnimatedBackground";
 import { supabase } from "@/integrations/supabase/client";
-
 interface RecentSession {
   id: string;
   drug_name: string;
   created_at: string;
 }
-
 const Dashboard = () => {
-  const { user } = useAuth();
+  const {
+    user
+  } = useAuth();
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-
   useEffect(() => {
     const fetchRecentSessions = async () => {
       try {
         // Fetch real data from Supabase
-        const { data: sessions, error } = await supabase
-          .from('search_sessions')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(5);
-
+        const {
+          data: sessions,
+          error
+        } = await supabase.from('search_sessions').select('*').order('created_at', {
+          ascending: false
+        }).limit(5);
         if (error) throw error;
-        
         setRecentSessions(sessions || []);
       } catch (error) {
         console.error("Error fetching recent sessions:", error);
@@ -40,7 +37,6 @@ const Dashboard = () => {
         setIsLoading(false);
       }
     };
-
     fetchRecentSessions();
   }, []);
 
@@ -50,20 +46,14 @@ const Dashboard = () => {
     return date.toLocaleDateString("en-CA", {
       month: "short",
       day: "numeric",
-      year: "numeric",
+      year: "numeric"
     });
   };
-
-  return (
-    <div className="space-y-6">
+  return <div className="space-y-6">
       <div className="relative bg-white rounded-lg p-6 overflow-hidden">
         <div className="relative z-10">
           <h1 className="text-2xl font-bold text-gray-900 mb-2 flex items-center">
-            <img 
-              src="/lovable-uploads/42627357-f347-458f-8e78-765c940622aa.png"
-              alt="SynapseRx Logo"
-              className="h-7 w-7 mr-2"
-            />
+            
             Welcome to SynapseRx
           </h1>
           <p className="text-gray-600 max-w-3xl">
@@ -93,12 +83,8 @@ const Dashboard = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
-              <div className="py-4 text-center text-gray-500">Loading recent sessions...</div>
-            ) : recentSessions.length > 0 ? (
-              <ul className="space-y-2">
-                {recentSessions.map((session) => (
-                  <li key={session.id}>
+            {isLoading ? <div className="py-4 text-center text-gray-500">Loading recent sessions...</div> : recentSessions.length > 0 ? <ul className="space-y-2">
+                {recentSessions.map(session => <li key={session.id}>
                     <Link to={`/session/${session.id}`}>
                       <Button variant="outline" className="w-full justify-start text-left">
                         <div className="mr-4">
@@ -112,14 +98,10 @@ const Dashboard = () => {
                         </div>
                       </Button>
                     </Link>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="py-4 text-center text-gray-500">
+                  </li>)}
+              </ul> : <div className="py-4 text-center text-gray-500">
                 No recent sessions found
-              </div>
-            )}
+              </div>}
             
             <div className="mt-4">
               <Link to="/history">
@@ -203,8 +185,6 @@ const Dashboard = () => {
           </CardContent>
         </Card>
       </div>
-    </div>
-  );
+    </div>;
 };
-
 export default Dashboard;
