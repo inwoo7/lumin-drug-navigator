@@ -1,3 +1,4 @@
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ const Dashboard = () => {
   useEffect(() => {
     const fetchRecentSessions = async () => {
       try {
+        // Fetch real data from Supabase
         const { data: sessions, error } = await supabase
           .from('search_sessions')
           .select('*')
@@ -42,6 +44,7 @@ const Dashboard = () => {
     fetchRecentSessions();
   }, []);
 
+  // Format date to a more readable format
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString("en-CA", {
@@ -56,11 +59,11 @@ const Dashboard = () => {
       <div className="relative bg-white rounded-lg p-6 overflow-hidden">
         <div className="relative z-10">
           <h1 className="text-2xl font-bold text-gray-900 mb-2 flex items-center">
-            <PillIcon className="h-7 w-7 mr-2 text-synapse-mint" />
-            Welcome to SynapseRx
+            <PillIcon className="h-7 w-7 mr-2 text-lumin-teal" />
+            Welcome to Lumin
           </h1>
           <p className="text-gray-600 max-w-3xl">
-            SynapseRx helps hospital pharmacists respond to drug shortages with real-time information, 
+            Lumin helps hospital pharmacists respond to drug shortages with real-time information, 
             therapeutic alternatives, and documentation tools. Search for a drug below to get started.
           </p>
           
@@ -78,7 +81,7 @@ const Dashboard = () => {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
-              <History className="h-5 w-5 mr-2 text-synapse-mint" />
+              <History className="h-5 w-5 mr-2 text-lumin-teal" />
               Recent Sessions
             </CardTitle>
             <CardDescription>
@@ -95,7 +98,7 @@ const Dashboard = () => {
                     <Link to={`/session/${session.id}`}>
                       <Button variant="outline" className="w-full justify-start text-left">
                         <div className="mr-4">
-                          <PillIcon className="h-4 w-4 text-synapse-mint" />
+                          <PillIcon className="h-4 w-4 text-lumin-teal" />
                         </div>
                         <div className="flex-1 flex justify-between items-center">
                           <span>{session.drug_name}</span>
@@ -127,11 +130,11 @@ const Dashboard = () => {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
-              <FileText className="h-5 w-5 mr-2 text-synapse-mint" />
+              <FileText className="h-5 w-5 mr-2 text-lumin-teal" />
               Quick Start Guide
             </CardTitle>
             <CardDescription>
-              Learn how to make the most of SynapseRx
+              Learn how to make the most of Lumin
             </CardDescription>
           </CardHeader>
           <CardContent>
