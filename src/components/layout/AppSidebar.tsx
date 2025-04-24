@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -71,7 +70,7 @@ const AppSidebar = () => {
         </Button>
       </div>
 
-      {/* Sidebar for mobile (slide-over) */}
+      {/* Mobile sidebar content */}
       <div
         className={`fixed inset-0 z-40 transform lg:hidden transition-transform duration-300 ease-in-out ${
           isMobileOpen ? "translate-x-0" : "-translate-x-full"
@@ -90,10 +89,12 @@ const AppSidebar = () => {
           </div>
 
           <div className="sidebar-content">
-            {/* Mobile sidebar content - same as desktop */}
             <div className="flex items-center gap-2 px-4 py-6 border-b">
-              <PillIcon className="h-8 w-8 text-lumin-teal" />
-              <span className="text-xl font-bold text-lumin-teal">Lumin</span>
+              <img 
+                src="/lovable-uploads/42627357-f347-458f-8e78-765c940622aa.png"
+                alt="SynapseRx Logo"
+                className="h-8"
+              />
             </div>
 
             <nav className="flex-1 space-y-1 px-2 py-4">
@@ -138,11 +139,14 @@ const AppSidebar = () => {
         </div>
       </div>
 
-      {/* Desktop sidebar (always visible) */}
+      {/* Desktop sidebar */}
       <div className="hidden lg:flex h-screen w-64 flex-col bg-white border-r">
         <div className="flex items-center gap-2 px-4 py-6 border-b">
-          <PillIcon className="h-8 w-8 text-lumin-teal" />
-          <span className="text-xl font-bold text-lumin-teal">Lumin</span>
+          <img 
+            src="/lovable-uploads/42627357-f347-458f-8e78-765c940622aa.png"
+            alt="SynapseRx Logo"
+            className="h-8"
+          />
         </div>
 
         <nav className="flex-1 space-y-1 px-2 py-4">

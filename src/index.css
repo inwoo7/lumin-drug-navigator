@@ -98,8 +98,8 @@
 .animate-grid {
   background-size: 60px 60px;
   background-image: 
-    linear-gradient(to right, rgba(68, 168, 150, 0.1) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(68, 168, 150, 0.1) 1px, transparent 1px);
+    linear-gradient(to right, rgba(68, 197, 158, 0.1) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(68, 197, 158, 0.1) 1px, transparent 1px);
   position: relative;
   overflow: hidden;
 }
@@ -114,7 +114,7 @@
   z-index: -1;
   background-size: 60px 60px;
   background-image:
-    linear-gradient(to right, rgba(68, 168, 150, 0.1) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(68, 168, 150, 0.1) 1px, transparent 1px);
+    linear-gradient(to right, rgba(68, 197, 158, 0.1) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(68, 197, 158, 0.1) 1px, transparent 1px);
   animation: grid-flow 20s linear infinite;
 }

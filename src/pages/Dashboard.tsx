@@ -59,11 +59,15 @@ const Dashboard = () => {
       <div className="relative bg-white rounded-lg p-6 overflow-hidden">
         <div className="relative z-10">
           <h1 className="text-2xl font-bold text-gray-900 mb-2 flex items-center">
-            <PillIcon className="h-7 w-7 mr-2 text-lumin-teal" />
-            Welcome to Lumin
+            <img 
+              src="/lovable-uploads/42627357-f347-458f-8e78-765c940622aa.png"
+              alt="SynapseRx Logo"
+              className="h-7 w-7 mr-2"
+            />
+            Welcome to SynapseRx
           </h1>
           <p className="text-gray-600 max-w-3xl">
-            Lumin helps hospital pharmacists respond to drug shortages with real-time information, 
+            SynapseRx helps hospital pharmacists respond to drug shortages with real-time information, 
             therapeutic alternatives, and documentation tools. Search for a drug below to get started.
           </p>
           

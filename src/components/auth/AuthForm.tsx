@@ -76,7 +76,11 @@ const AuthForm = () => {
       
       <div className="z-10 w-full max-w-md px-4">
         <div className="mb-8 text-center">
-          <h1 className="text-4xl font-bold text-lumin-teal mb-2">Lumin</h1>
+          <img 
+            src="/lovable-uploads/42627357-f347-458f-8e78-765c940622aa.png"
+            alt="SynapseRx Logo"
+            className="h-12 mx-auto mb-2"
+          />
           <p className="text-muted-foreground">Drug Shortage Response Tool</p>
         </div>
         
