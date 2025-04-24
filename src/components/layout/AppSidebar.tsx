@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -92,8 +91,11 @@ const AppSidebar = () => {
           <div className="sidebar-content">
             {/* Mobile sidebar content - same as desktop */}
             <div className="flex items-center gap-2 px-4 py-6 border-b">
-              <PillIcon className="h-8 w-8 text-lumin-teal" />
-              <span className="text-xl font-bold text-lumin-teal">Lumin</span>
+              <img 
+                src="/lovable-uploads/79658d1b-1a33-43fb-87bc-38c4899f8e30.png" 
+                alt="SynapseRx Logo" 
+                className="h-8"
+              />
             </div>
 
             <nav className="flex-1 space-y-1 px-2 py-4">
@@ -141,8 +143,11 @@ const AppSidebar = () => {
       {/* Desktop sidebar (always visible) */}
       <div className="hidden lg:flex h-screen w-64 flex-col bg-white border-r">
         <div className="flex items-center gap-2 px-4 py-6 border-b">
-          <PillIcon className="h-8 w-8 text-lumin-teal" />
-          <span className="text-xl font-bold text-lumin-teal">Lumin</span>
+          <img 
+            src="/lovable-uploads/79658d1b-1a33-43fb-87bc-38c4899f8e30.png" 
+            alt="SynapseRx Logo" 
+            className="h-8"
+          />
         </div>
 
         <nav className="flex-1 space-y-1 px-2 py-4">
