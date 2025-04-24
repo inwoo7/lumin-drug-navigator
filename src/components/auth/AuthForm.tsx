@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +9,7 @@ import AnimatedBackground from "./AnimatedBackground";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
+import BrandLogo from "../common/BrandLogo";
 
 const AuthForm = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -19,7 +19,6 @@ const AuthForm = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   
-  // If user is already logged in, redirect to dashboard
   useEffect(() => {
     if (user) {
       navigate("/dashboard");
@@ -32,7 +31,6 @@ const AuthForm = () => {
 
     try {
       if (isLogin) {
-        // Login flow
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
@@ -45,7 +43,6 @@ const AuthForm = () => {
           navigate("/dashboard");
         }
       } else {
-        // Signup flow
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -76,12 +73,8 @@ const AuthForm = () => {
       
       <div className="z-10 w-full max-w-md px-4">
         <div className="mb-8 text-center">
-          <img 
-            src="/lovable-uploads/42627357-f347-458f-8e78-765c940622aa.png"
-            alt="SynapseRx Logo"
-            className="h-12 mx-auto mb-2"
-          />
-          <p className="text-muted-foreground">Drug Shortage Response Tool</p>
+          <BrandLogo className="mx-auto" size="lg" />
+          <p className="text-muted-foreground mt-2">Drug Shortage Response Tool</p>
         </div>
         
         <Card className="bg-white/95 backdrop-blur">

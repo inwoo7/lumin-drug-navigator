@@ -8,21 +8,24 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import AnimatedBackground from "@/components/auth/AnimatedBackground";
 import { supabase } from "@/integrations/supabase/client";
+import BrandLogo from "@/components/common/BrandLogo";
+
 interface RecentSession {
   id: string;
   drug_name: string;
   created_at: string;
 }
+
 const Dashboard = () => {
   const {
     user
   } = useAuth();
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
   useEffect(() => {
     const fetchRecentSessions = async () => {
       try {
-        // Fetch real data from Supabase
         const {
           data: sessions,
           error
@@ -40,7 +43,6 @@ const Dashboard = () => {
     fetchRecentSessions();
   }, []);
 
-  // Format date to a more readable format
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString("en-CA", {
@@ -49,12 +51,12 @@ const Dashboard = () => {
       year: "numeric"
     });
   };
+
   return <div className="space-y-6">
       <div className="relative bg-white rounded-lg p-6 overflow-hidden">
         <div className="relative z-10">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2 flex items-center">
-            
-            Welcome to SynapseRx
+          <h1 className="text-2xl font-bold text-gray-900 mb-2 flex items-center gap-2">
+            <BrandLogo size="sm" />
           </h1>
           <p className="text-gray-600 max-w-3xl">
             SynapseRx helps hospital pharmacists respond to drug shortages with real-time information, 
@@ -187,4 +189,5 @@ const Dashboard = () => {
       </div>
     </div>;
 };
+
 export default Dashboard;
