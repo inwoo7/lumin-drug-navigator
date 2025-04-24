@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,7 @@ const AuthForm = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   
+  // If user is already logged in, redirect to dashboard
   useEffect(() => {
     if (user) {
       navigate("/dashboard");
@@ -30,6 +32,7 @@ const AuthForm = () => {
 
     try {
       if (isLogin) {
+        // Login flow
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
@@ -42,6 +45,7 @@ const AuthForm = () => {
           navigate("/dashboard");
         }
       } else {
+        // Signup flow
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -72,11 +76,7 @@ const AuthForm = () => {
       
       <div className="z-10 w-full max-w-md px-4">
         <div className="mb-8 text-center">
-          <img 
-            src="/lovable-uploads/79658d1b-1a33-43fb-87bc-38c4899f8e30.png" 
-            alt="SynapseRx Logo" 
-            className="h-12 mx-auto mb-2"
-          />
+          <h1 className="text-4xl font-bold text-lumin-teal mb-2">Lumin</h1>
           <p className="text-muted-foreground">Drug Shortage Response Tool</p>
         </div>
         
@@ -116,7 +116,7 @@ const AuthForm = () => {
             <CardFooter className="flex flex-col">
               <Button 
                 type="submit" 
-                className="w-full bg-[#44c59e] hover:bg-[#44c59e]/90"
+                className="w-full bg-lumin-teal hover:bg-lumin-teal/90"
                 disabled={isLoading}
               >
                 {isLoading ? (
