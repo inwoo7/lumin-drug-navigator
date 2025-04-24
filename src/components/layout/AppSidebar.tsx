@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -76,7 +77,7 @@ const AppSidebar = () => {
           isMobileOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="relative flex h-full w-64 flex-col bg-sidebar text-sidebar-foreground">
+        <div className="relative flex h-full w-64 flex-col bg-white shadow-xl">
           <div className="absolute right-0 top-0 -mr-12 pt-2">
             <Button
               variant="ghost"
@@ -89,12 +90,10 @@ const AppSidebar = () => {
           </div>
 
           <div className="sidebar-content">
-            <div className="flex items-center gap-2 px-4 py-6 border-b border-sidebar-border">
-              <img
-                src="/lovable-uploads/0fdea9f9-300c-4b7b-b088-916c110910cd.png"
-                alt="SynapseRx"
-                className="h-8"
-              />
+            {/* Mobile sidebar content - same as desktop */}
+            <div className="flex items-center gap-2 px-4 py-6 border-b">
+              <PillIcon className="h-8 w-8 text-lumin-teal" />
+              <span className="text-xl font-bold text-lumin-teal">Lumin</span>
             </div>
 
             <nav className="flex-1 space-y-1 px-2 py-4">
@@ -108,8 +107,8 @@ const AppSidebar = () => {
                     variant={location.pathname === item.path ? "default" : "ghost"}
                     className={`w-full justify-start mb-1 ${
                       location.pathname === item.path
-                        ? "bg-synapse-mint text-synapse-teal hover:bg-synapse-mint/90"
-                        : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        ? "bg-lumin-teal text-white hover:bg-lumin-teal/90"
+                        : ""
                     }`}
                   >
                     {item.icon}
@@ -140,13 +139,10 @@ const AppSidebar = () => {
       </div>
 
       {/* Desktop sidebar (always visible) */}
-      <div className="hidden lg:flex h-screen w-64 flex-col bg-sidebar text-sidebar-foreground">
-        <div className="flex items-center gap-2 px-4 py-6 border-b border-sidebar-border">
-          <img
-            src="/lovable-uploads/a04cbf64-6a8f-4436-8a48-26695fcd68ea.png"
-            alt="SynapseRx"
-            className="h-8"
-          />
+      <div className="hidden lg:flex h-screen w-64 flex-col bg-white border-r">
+        <div className="flex items-center gap-2 px-4 py-6 border-b">
+          <PillIcon className="h-8 w-8 text-lumin-teal" />
+          <span className="text-xl font-bold text-lumin-teal">Lumin</span>
         </div>
 
         <nav className="flex-1 space-y-1 px-2 py-4">
@@ -156,8 +152,8 @@ const AppSidebar = () => {
                 variant={location.pathname === item.path ? "default" : "ghost"}
                 className={`w-full justify-start mb-1 ${
                   location.pathname === item.path
-                    ? "bg-synapse-mint text-synapse-teal hover:bg-synapse-mint/90"
-                    : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    ? "bg-lumin-teal text-white hover:bg-lumin-teal/90"
+                    : ""
                 }`}
               >
                 {item.icon}
