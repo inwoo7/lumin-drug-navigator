@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 import BrandLogo from "../common/BrandLogo";
+
 const AuthForm = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
@@ -19,11 +20,13 @@ const AuthForm = () => {
   const {
     user
   } = useAuth();
+
   useEffect(() => {
     if (user) {
       navigate("/dashboard");
     }
   }, [user, navigate]);
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -66,13 +69,13 @@ const AuthForm = () => {
       setIsLoading(false);
     }
   };
+
   return <div className="flex flex-col items-center justify-center min-h-screen w-full">
       <AnimatedBackground />
       
       <div className="z-10 w-full max-w-md px-4">
         <div className="mb-8 text-center">
-          <BrandLogo className="mx-auto" size="lg" />
-          <p className="text-muted-foreground mt-2 font-normal text-sm">Drug Shortage Response Tool</p>
+          <BrandLogo className="mx-auto" variant="auth" size="lg" />
         </div>
         
         <Card className="bg-white/95 backdrop-blur">
@@ -109,4 +112,5 @@ const AuthForm = () => {
       </div>
     </div>;
 };
+
 export default AuthForm;
