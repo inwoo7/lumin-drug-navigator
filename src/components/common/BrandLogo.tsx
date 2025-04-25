@@ -13,11 +13,11 @@ const BrandLogo = ({
   variant = 'app'
 }: BrandLogoProps) => {
   return (
-    <div className={`flex flex-col items-start ${className}`}>
+    <div className={`flex flex-col items-center text-center ${className}`}>
       <span className={`font-inter font-bold ${size === 'lg' ? 'text-3xl' : 'text-xl'} text-gray-900`}>
         {variant === 'app' ? 'New Search' : 'SynapseRx'}
       </span>
-      <div className="flex items-center space-x-1">
+      <div className="flex items-center justify-center space-x-1 mt-1">
         {variant === 'auth' && (
           <>
             <span className="text-gray-500 mr-1 text-xs">by</span>
