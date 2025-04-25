@@ -1,18 +1,36 @@
+
 import React from 'react';
+
 interface BrandLogoProps {
   className?: string;
   size?: 'sm' | 'lg';
+  variant?: 'app' | 'auth';
 }
+
 const BrandLogo = ({
   className = '',
-  size = 'lg'
+  size = 'lg',
+  variant = 'app'
 }: BrandLogoProps) => {
-  return <div className={`flex flex-col items-start ${className}`}>
-      <span className={`font-inter font-bold ${size === 'lg' ? 'text-3xl' : 'text-xl'} text-gray-900`}>New Search</span>
+  return (
+    <div className={`flex flex-col items-start ${className}`}>
+      <span className={`font-inter font-bold ${size === 'lg' ? 'text-3xl' : 'text-xl'} text-gray-900`}>
+        {variant === 'app' ? 'New Search' : 'SynapseRx'}
+      </span>
       <div className="flex items-center space-x-1">
-        
-        
+        {variant === 'auth' && (
+          <>
+            <span className="text-gray-500 mr-1 text-xs">by</span>
+            <img 
+              src="/lovable-uploads/42627357-f347-458f-8e78-765c940622aa.png" 
+              alt="MaaTRx Logo" 
+              className="h-3" 
+            />
+          </>
+        )}
       </div>
-    </div>;
+    </div>
+  );
 };
+
 export default BrandLogo;
