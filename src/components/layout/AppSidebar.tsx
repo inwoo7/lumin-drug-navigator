@@ -1,4 +1,5 @@
-import { useState } from "react";
+
+import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -9,7 +10,6 @@ import {
   HistoryIcon, 
   LogOutIcon, 
   MenuIcon,
-  PillIcon,
   SettingsIcon,
   XIcon,
   UserIcon
@@ -18,7 +18,7 @@ import {
 const AppSidebar = () => {
   const { signOut, user } = useAuth();
   const location = useLocation();
-  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = React.useState(false);
 
   const handleSignOut = async () => {
     try {
@@ -90,11 +90,19 @@ const AppSidebar = () => {
 
           <div className="sidebar-content">
             <div className="flex items-center gap-2 px-4 py-6 border-b">
-              <img 
-                src="/lovable-uploads/42627357-f347-458f-8e78-765c940622aa.png"
-                alt="SynapseRx Logo"
-                className="h-8"
-              />
+              <div className="flex flex-col items-start">
+                <span className="font-inter font-bold text-xl text-gray-900">
+                  SynapseRx
+                </span>
+                <div className="flex items-center space-x-1">
+                  <span className="text-gray-500 mr-1 text-xs">by</span>
+                  <img 
+                    src="/lovable-uploads/42627357-f347-458f-8e78-765c940622aa.png"
+                    alt="MaaTRx Logo"
+                    className="h-3"
+                  />
+                </div>
+              </div>
             </div>
 
             <nav className="flex-1 space-y-1 px-2 py-4">
@@ -142,11 +150,19 @@ const AppSidebar = () => {
       {/* Desktop sidebar */}
       <div className="hidden lg:flex h-screen w-64 flex-col bg-white border-r">
         <div className="flex items-center gap-2 px-4 py-6 border-b">
-          <img 
-            src="/lovable-uploads/42627357-f347-458f-8e78-765c940622aa.png"
-            alt="SynapseRx Logo"
-            className="h-8"
-          />
+          <div className="flex flex-col items-start">
+            <span className="font-inter font-bold text-xl text-gray-900">
+              SynapseRx
+            </span>
+            <div className="flex items-center space-x-1">
+              <span className="text-gray-500 mr-1 text-xs">by</span>
+              <img 
+                src="/lovable-uploads/42627357-f347-458f-8e78-765c940622aa.png"
+                alt="MaaTRx Logo"
+                className="h-3"
+              />
+            </div>
+          </div>
         </div>
 
         <nav className="flex-1 space-y-1 px-2 py-4">
