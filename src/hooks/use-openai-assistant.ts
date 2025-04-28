@@ -146,6 +146,7 @@ export const useOpenAIAssistant = ({
       // 6. We're already loading something
       // 7. We're in a restored session (i.e., session loaded from DB)
       // 8. We already have document content
+      // 9. We are restoring a session from the database
       if (
         assistantType !== "document" || 
         !generateDocument || 
@@ -157,7 +158,7 @@ export const useOpenAIAssistant = ({
         (documentContent && documentContent.length > 0)
       ) {
         // If we're a document assistant but won't generate, still mark as initialized
-        if (assistantType === "document" && !isInitialized && !isLoading) {
+        if (assistantType === "document" && !isInitialized && !isLoading && !isRestoredSession) {
           console.log("Document assistant not generating document but marking as initialized");
           setIsInitialized(true);
           if (onStateChange) {
@@ -481,9 +482,8 @@ Format your response with clear headings and bullet points where appropriate.`;
         } finally {
           setIsLoading(false);
         }
-      } else if (assistantType === "shortage" && !isInitialized && !isLoading) {
-        // For shortage assistants that don't need generation but aren't initialized,
-        // mark them as initialized to allow user interaction
+      } else if (assistantType === "shortage" && !isInitialized && !isLoading && !isRestoredSession) {
+        // For shortage assistants that don't need generation but aren't initialized (and not restored)
         console.log("Shortage assistant has no data to generate but marking as initialized");
         setIsInitialized(true);
         if (onStateChange) {
@@ -511,8 +511,8 @@ Format your response with clear headings and bullet points where appropriate.`;
 
   useEffect(() => {
     const initialize = async () => {
-      // Skip if we've already initialized or if we're in the loading state
-      if (hasAttemptedGeneration || isInitialized || isLoading || !drugShortageData) {
+      // Skip if we've already initialized, are loading, restoring, or missing data
+      if (isInitialized || isLoading || isRestoredSession || !drugShortageData || hasAttemptedGeneration) {
         return;
       }
       
@@ -523,19 +523,13 @@ Format your response with clear headings and bullet points where appropriate.`;
         return;
       }
       
-      // Skip this initialization for the shortage assistant, it's handled in the separate effect
+      // Skip this initialization for the shortage assistant, it's handled separately
       if (assistantType === "shortage") {
         return;
       }
-      
-      // Skip if we're in a restored session with document content
-      if (isRestoredSession && documentContent && documentContent.length > 0) {
-        setIsInitialized(true);
-        setHasAttemptedGeneration(true);
-        return;
-      }
-      
+            
       if (autoInitialize && sessionId && !threadId) {
+          console.log("Running generic auto-initialize effect");
           setIsLoading(true);
           
           try {
@@ -544,76 +538,79 @@ Format your response with clear headings and bullet points where appropriate.`;
                 assistantType,
                 messages: [],
                 drugData: drugShortageData,
-              allShortageData: allShortageData || [],
+                allShortageData: allShortageData || [],
                 documentContent,
                 sessionId,
-              generateDocument: generateDocument || assistantType === "document",
-              rawData: shouldSendRawData // Only send raw data for initial document generation
+                generateDocument: generateDocument || assistantType === "document",
+                rawData: shouldSendRawData
               },
             });
             
             if (error) {
-              console.error("Error initializing assistant:", error);
-            toast.error("Failed to initialize AI assistant. Using offline mode.");
+              console.error("Error initializing assistant (generic effect):", error);
               setError(error.message);
+              setIsInitialized(true);
+              setHasAttemptedGeneration(true);
               return;
             }
             
-          if (data && data.error) {
-              console.error("Error from OpenAI assistant:", data.error);
-            toast.error(data.error || "Error processing request");
+            if (data && data.error) {
+              console.error("Error from OpenAI assistant (generic effect):", data.error);
               setError(data.error);
+              setIsInitialized(true);
+              setHasAttemptedGeneration(true);
               return;
             }
             
-          if (data) {
-            if (data.threadId) {
-            setThreadId(data.threadId);
-            }
-            
-            if (data.messages && data.messages.length > 0) {
-              const formattedMessages = data.messages.map((msg: any) => ({
-                id: msg.id,
-                role: msg.role as "user" | "assistant",
-                content: msg.content,
-                timestamp: new Date(msg.timestamp)
-              }));
+            if (data) {
+              if (data.threadId) {
+              setThreadId(data.threadId);
+              }
               
-              setMessages(formattedMessages);
-              
-              if (assistantType === "document" && onDocumentUpdate && formattedMessages.length > 0) {
-                const assistantMessages = formattedMessages.filter(msg => msg.role === "assistant");
-                if (assistantMessages.length > 0) {
-                  onDocumentUpdate(assistantMessages[0].content);
+              if (data.messages && data.messages.length > 0) {
+                const formattedMessages = data.messages.map((msg: any) => ({
+                  id: msg.id,
+                  role: msg.role as "user" | "assistant",
+                  content: msg.content,
+                  timestamp: new Date(msg.timestamp)
+                }));
+                
+                setMessages(formattedMessages);
+                
+                if (assistantType === "document" && onDocumentUpdate && formattedMessages.length > 0) {
+                  const assistantMessages = formattedMessages.filter(msg => msg.role === "assistant");
+                  if (assistantMessages.length > 0) {
+                    onDocumentUpdate(assistantMessages[0].content);
+                  }
+                }
+              } else if (data.message) {
+                const initialMessage = {
+                  id: Date.now().toString(),
+                  role: "assistant" as const,
+                  content: data.message,
+                  timestamp: new Date(),
+                };
+                
+                setMessages([initialMessage]);
+                
+                if (assistantType === "document" && onDocumentUpdate) {
+                  onDocumentUpdate(data.message);
                 }
               }
-            } else if (data.message) {
-              const initialMessage = {
-                id: Date.now().toString(),
-                role: "assistant" as const,
-                content: data.message,
-                timestamp: new Date(),
-              };
-              
-              setMessages([initialMessage]);
-              
-              if (assistantType === "document" && onDocumentUpdate) {
-                onDocumentUpdate(data.message);
-              }
             }
-          }
-          
-          // After initialization, we don't need to send raw data anymore
-          setShouldSendRawData(false);
-            setIsInitialized(true);
-          setHasAttemptedGeneration(true);
-          } catch (err: any) {
-            console.error("Error in initializing assistant:", err);
-            setError(err.message || "An error occurred");
-          toast.error("Failed to initialize AI assistant. Using offline mode.");
-          } finally {
-            setIsLoading(false);
-        }
+            
+            // After initialization, we don't need to send raw data anymore
+            setShouldSendRawData(false);
+              setIsInitialized(true);
+            setHasAttemptedGeneration(true);
+            } catch (err: any) {
+              console.error("Error in initializing assistant (generic effect):", err);
+              setError(err.message || "An error occurred");
+              setIsInitialized(true);
+              setHasAttemptedGeneration(true);
+            } finally {
+              setIsLoading(false);
+            }
       }
     };
     
