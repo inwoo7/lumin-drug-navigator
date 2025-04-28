@@ -52,7 +52,7 @@ export const useOpenAIAssistant = ({
       if (!sessionId) return;
       
       try {
-        console.log(`Attempting to load conversation for session ${sessionId}, assistant type: ${assistantType}`);
+        console.log(`[${assistantType}] Attempting to load conversation for session ${sessionId}`);
         
         const { data: conversations, error } = await supabase
           .rpc('get_ai_conversation', { 
@@ -104,30 +104,29 @@ export const useOpenAIAssistant = ({
                 timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
           }));
           
-              console.log(`Processed ${storedMessages.length} messages to display`);
+              console.log(`[${assistantType}] Processed ${storedMessages.length} messages to display`);
               
               // Set messages from database
           setMessages(storedMessages);
           setIsInitialized(true);
-              
-              // Skip auto-initialization if we loaded messages from DB
-              if (storedMessages.length > 0) {
-                setHasAttemptedGeneration(true);
-                setIsRestoredSession(true);
-                setShouldSendRawData(false); // Don't send raw data for restored sessions
-                console.log(`Session restored with ${storedMessages.length} messages`);
-              }
+          setHasAttemptedGeneration(true);
+          setIsRestoredSession(true);
+          setShouldSendRawData(false);
+          console.log(`[${assistantType}] Session restored with ${storedMessages.length} messages.`);
+          if (onStateChange) {
+            onStateChange({ isInitialized: true, isLoading: false });
+          }
             } else {
-              console.log("No messages found in the conversation data");
+              console.log(`[${assistantType}] No messages found in the conversation data`);
             }
           } else {
-            console.log("No messages array in conversation data");
+            console.log(`[${assistantType}] No messages array in conversation data`);
           }
         } else {
-          console.log(`No conversation found for session ${sessionId} and assistant type ${assistantType}`);
+          console.log(`[${assistantType}] No conversation found for session ${sessionId}`);
         }
       } catch (err) {
-        console.error("Error loading conversation:", err);
+        console.error(`[${assistantType}] Error loading conversation:`, err);
       }
     };
     
@@ -136,17 +135,13 @@ export const useOpenAIAssistant = ({
 
   // This effect triggers document generation when drug data is available
   useEffect(() => {
+    if (isRestoredSession) {
+      console.log(`[document] Skipping document generation because session was restored.`);
+      if (!isInitialized) setIsInitialized(true);
+      return;
+    }
+
     const generateDocumentFromData = async () => {
-      // Don't generate if:
-      // 1. We're not dealing with a document assistant
-      // 2. We don't want to generate a document
-      // 3. We don't have drug data
-      // 4. We've already attempted generation
-      // 5. We don't have a session ID
-      // 6. We're already loading something
-      // 7. We're in a restored session (i.e., session loaded from DB)
-      // 8. We already have document content
-      // 9. We are restoring a session from the database
       if (
         assistantType !== "document" || 
         !generateDocument || 
@@ -154,10 +149,8 @@ export const useOpenAIAssistant = ({
         hasAttemptedGeneration || 
         !sessionId ||
         isLoading ||
-        isRestoredSession ||
         (documentContent && documentContent.length > 0)
       ) {
-        // If we're a document assistant but won't generate, still mark as initialized
         if (assistantType === "document" && !isInitialized && !isLoading && !isRestoredSession) {
           console.log("Document assistant not generating document but marking as initialized");
           setIsInitialized(true);
@@ -168,7 +161,7 @@ export const useOpenAIAssistant = ({
         return;
       }
       
-      console.log("Starting document generation from drug data");
+      console.log("[document] Starting document generation from drug data (not a restored session).");
       setHasAttemptedGeneration(true);
       setIsLoading(true);
       
@@ -295,7 +288,9 @@ Format the document in Markdown with clear headings and sections.`;
       }
     };
     
-    generateDocumentFromData();
+    if (assistantType === "document") {
+      generateDocumentFromData();
+    }
   }, [
     assistantType, 
     generateDocument, 
@@ -314,6 +309,12 @@ Format the document in Markdown with clear headings and sections.`;
 
   // This effect handles loading drug data for the information assistant
   useEffect(() => {
+    if (isRestoredSession) {
+      console.log(`[shortage] Skipping info assistant initialization because session was restored.`);
+      if (!isInitialized) setIsInitialized(true);
+      return;
+    }
+
     const initializeInfoAssistant = async () => {
       // Check if this is a restored session from the database first
       if (sessionId && !isInitialized && !hasAttemptedGeneration) {
@@ -377,16 +378,14 @@ Format the document in Markdown with clear headings and sections.`;
       // 3. We have drug data available
       // 4. We're not already initialized
       // 5. We're not currently loading
-      // 6. This isn't a restored session from another loading method
       if (
         assistantType === "shortage" && 
         !hasAttemptedGeneration && 
         drugShortageData && 
         !isInitialized && 
-        !isLoading &&
-        !isRestoredSession // Don't initialize if we're in a restored session
+        !isLoading
       ) {
-        console.log("Initializing shortage assistant with comprehensive analysis");
+        console.log("[shortage] Initializing shortage assistant with comprehensive analysis (not a restored session).");
         setHasAttemptedGeneration(true);
         setIsLoading(true);
         
@@ -482,7 +481,7 @@ Format your response with clear headings and bullet points where appropriate.`;
         } finally {
           setIsLoading(false);
         }
-      } else if (assistantType === "shortage" && !isInitialized && !isLoading && !isRestoredSession) {
+      } else if (assistantType === "shortage" && !isInitialized && !isLoading) {
         // For shortage assistants that don't need generation but aren't initialized (and not restored)
         console.log("Shortage assistant has no data to generate but marking as initialized");
         setIsInitialized(true);
@@ -507,130 +506,6 @@ Format your response with clear headings and bullet points where appropriate.`;
     isRestoredSession,
     shouldSendRawData,
     onStateChange
-  ]);
-
-  useEffect(() => {
-    const initialize = async () => {
-      // Skip if we've already initialized, are loading, restoring, or missing data
-      if (isInitialized || isLoading || isRestoredSession || !drugShortageData || hasAttemptedGeneration) {
-        return;
-      }
-      
-      // Skip initialization if we already have messages (e.g., from DB load)
-      if (messages.length > 0) {
-        setIsInitialized(true);
-        setHasAttemptedGeneration(true);
-        return;
-      }
-      
-      // Skip this initialization for the shortage assistant, it's handled separately
-      if (assistantType === "shortage") {
-        return;
-      }
-            
-      if (autoInitialize && sessionId && !threadId) {
-          console.log("Running generic auto-initialize effect");
-          setIsLoading(true);
-          
-          try {
-            const { data, error } = await supabase.functions.invoke("openai-assistant", {
-              body: {
-                assistantType,
-                messages: [],
-                drugData: drugShortageData,
-                allShortageData: allShortageData || [],
-                documentContent,
-                sessionId,
-                generateDocument: generateDocument || assistantType === "document",
-                rawData: shouldSendRawData
-              },
-            });
-            
-            if (error) {
-              console.error("Error initializing assistant (generic effect):", error);
-              setError(error.message);
-              setIsInitialized(true);
-              setHasAttemptedGeneration(true);
-              return;
-            }
-            
-            if (data && data.error) {
-              console.error("Error from OpenAI assistant (generic effect):", data.error);
-              setError(data.error);
-              setIsInitialized(true);
-              setHasAttemptedGeneration(true);
-              return;
-            }
-            
-            if (data) {
-              if (data.threadId) {
-              setThreadId(data.threadId);
-              }
-              
-              if (data.messages && data.messages.length > 0) {
-                const formattedMessages = data.messages.map((msg: any) => ({
-                  id: msg.id,
-                  role: msg.role as "user" | "assistant",
-                  content: msg.content,
-                  timestamp: new Date(msg.timestamp)
-                }));
-                
-                setMessages(formattedMessages);
-                
-                if (assistantType === "document" && onDocumentUpdate && formattedMessages.length > 0) {
-                  const assistantMessages = formattedMessages.filter(msg => msg.role === "assistant");
-                  if (assistantMessages.length > 0) {
-                    onDocumentUpdate(assistantMessages[0].content);
-                  }
-                }
-              } else if (data.message) {
-                const initialMessage = {
-                  id: Date.now().toString(),
-                  role: "assistant" as const,
-                  content: data.message,
-                  timestamp: new Date(),
-                };
-                
-                setMessages([initialMessage]);
-                
-                if (assistantType === "document" && onDocumentUpdate) {
-                  onDocumentUpdate(data.message);
-                }
-              }
-            }
-            
-            // After initialization, we don't need to send raw data anymore
-            setShouldSendRawData(false);
-              setIsInitialized(true);
-            setHasAttemptedGeneration(true);
-            } catch (err: any) {
-              console.error("Error in initializing assistant (generic effect):", err);
-              setError(err.message || "An error occurred");
-              setIsInitialized(true);
-              setHasAttemptedGeneration(true);
-            } finally {
-              setIsLoading(false);
-            }
-      }
-    };
-    
-    initialize();
-  }, [
-    autoInitialize, 
-    isInitialized, 
-    messages.length, 
-    sessionId, 
-    assistantType, 
-    threadId, 
-    isLoading, 
-    drugShortageData, 
-    allShortageData, 
-    documentContent,
-    onDocumentUpdate,
-    generateDocument,
-    isRestoredSession,
-    hasAttemptedGeneration,
-    shouldSendRawData
   ]);
 
   const addMessage = (role: "user" | "assistant", content: string) => {
