@@ -405,6 +405,7 @@ Format the document in Markdown with clear headings and sections.`;
           // Set the placeholder message
           setMessages([initialMessage]);
           
+          // DO NOT add the initialPrompt itself to the message history.
           const initialPrompt = `Generate a comprehensive analysis of the ${drugShortageData?.brand_name || drugShortageData?.drug_name || "drug"} shortage.
 Include the following information:
 1. Background of the shortage
@@ -417,9 +418,11 @@ Include the following information:
 
 Format your response with clear headings and bullet points where appropriate.`;
           
+          console.log("[shortage] Calling Supabase function with initial prompt...");
           const { data, error } = await supabase.functions.invoke("openai-assistant", {
             body: {
               assistantType: "shortage",
+              // Send the PROMPT to the backend, not the chat history
               messages: [{
                 role: "user",
                 content: initialPrompt
@@ -435,8 +438,27 @@ Format your response with clear headings and bullet points where appropriate.`;
           if (error) {
             console.error("Error creating assistant thread:", error);
             toast.error("Error initializing assistant. Using offline mode.");
-            
+            // Replace placeholder with an error message
+            setMessages([{ 
+              id: Date.now().toString(), 
+              role: 'assistant', 
+              content: 'Error initializing assistant. Could not connect to AI service.', 
+              timestamp: new Date() 
+            }]);
             setIsInitialized(true); // Still mark as initialized so user can interact
+            if (onStateChange) {
+              onStateChange({ isInitialized: true, isLoading: false });
+            }
+          } else if (data.error) {
+            console.error("Error from assistant function:", data.error);
+            toast.error(`Assistant Error: ${data.error}`);
+             setMessages([{ 
+              id: Date.now().toString(), 
+              role: 'assistant', 
+              content: `Assistant Error: ${data.error}`, 
+              timestamp: new Date() 
+            }]);
+            setIsInitialized(true);
             if (onStateChange) {
               onStateChange({ isInitialized: true, isLoading: false });
             }
@@ -444,22 +466,37 @@ Format your response with clear headings and bullet points where appropriate.`;
             // Set thread ID for future messages
             if (data.threadId) {
               setThreadId(data.threadId);
+               console.log(`[shortage] Thread ID set: ${data.threadId}`);
             }
             
             // Add the initial comprehensive analysis to the chat
             if (data.message) {
-              const responseMessage = {
+                console.log("[shortage] Received initial analysis response.");
+              const responseMessage: Message = {
                 id: Date.now().toString(),
                 role: "assistant" as const,
-                content: data.message,
+                content: data.message, // This is the actual analysis, not the prompt
                 timestamp: new Date(),
               };
               
               // Replace the placeholder with the actual response
               setMessages([responseMessage]);
               
-              // Save this conversation to the database
-              saveConversation([responseMessage]);
+              // Save this conversation to the database with the response message and threadId
+              if (data.threadId) {
+                 saveConversation([responseMessage], data.threadId);
+              } else {
+                 console.warn("[shortage] No threadId received after initialization, cannot save initial conversation.");
+              }
+            } else {
+                 console.warn("[shortage] Initialization successful, but no message content received.");
+                 // Replace placeholder with a confirmation/info message
+                 setMessages([{ 
+                   id: Date.now().toString(), 
+                   role: 'assistant', 
+                   content: 'Assistant initialized. Ask me anything about the shortage.', 
+                   timestamp: new Date() 
+                 }]);
             }
             
             // After initialization, we don't need to send raw data anymore

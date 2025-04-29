@@ -54,13 +54,20 @@ const SessionPage = () => {
     autoInitialize: !!selectedReportData && !isDocumentGenerated && !docLoadAttempted && documentContent === "",
     generateDocument: !!selectedReportData && !isDocumentGenerated && documentContent === "",
     onDocumentUpdate: (content) => {
-      if (!documentContent || documentContent === "") { // Only update if there's no document already
-        setDocumentContent(content);
-        setIsDocumentGenerated(true);
-        setIsDocumentInitializing(false);
-        setIsDocumentAssistantReady(true);
-        saveDocument(content);
+      console.log("SessionPage: onDocumentUpdate called by hook.");
+      // Always update the document content when the hook provides it
+      setDocumentContent(content);
+      // Mark as generated if not already
+      if (!isDocumentGenerated) {
+          setIsDocumentGenerated(true);
+          setIsDocumentInitializing(false);
       }
+      // Mark assistant as ready if not already
+       if (!isDocumentAssistantReady) {
+           setIsDocumentAssistantReady(true);
+       }
+       // Save the updated document
+      saveDocument(content);
     },
     onStateChange: (state) => {
       // Mark document assistant ready when initialized
