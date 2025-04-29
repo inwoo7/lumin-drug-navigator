@@ -67,7 +67,21 @@ const DocumentEditor = ({
     };
     
     loadDocument();
-  }, [sessionId, initialContent]);
+  }, [sessionId]);
+
+  // Effect to synchronize internal state with initialContent prop changes *after* load
+  useEffect(() => {
+    // Only update if:
+    // 1. Initial load is complete (isLoaded is true)
+    // 2. initialContent prop is defined
+    // 3. The prop value is different from the current internal state
+    if (isLoaded && initialContent !== undefined && initialContent !== content) {
+      console.log("DocumentEditor: Prop initialContent changed, updating internal state.");
+      setContent(initialContent);
+    }
+    // We only want this effect to run when initialContent changes *after* load.
+    // Do not include `content` in dependency array to prevent loops.
+  }, [initialContent, isLoaded]);
 
   const initializeWithTemplate = () => {
     const template = `# ${drugName} Shortage Management Plan
