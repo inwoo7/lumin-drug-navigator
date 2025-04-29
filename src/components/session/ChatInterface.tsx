@@ -109,71 +109,14 @@ export function ChatInterface({
     // Set the message sending flag to true
     setIsMessageSending(true);
     
-    // Document editing - detect if user wants to edit the document
-    const isEditRequest = sessionType === "document" && 
-      (inputMessage.toLowerCase().includes("edit") || 
-       inputMessage.toLowerCase().includes("update") || 
-       inputMessage.toLowerCase().includes("change") ||
-       inputMessage.toLowerCase().includes("modify") ||
-       isEditMode);
-       
-    // If this looks like a document edit request, format it properly
-    if (isEditRequest) {
-      const editingPrompt = `Please edit the document with the following instructions: ${inputMessage}. 
-Return ONLY the complete updated document content.`;
-      
-      const message = inputMessage;
-      setInputMessage("");
-      
-      // Show loading state with specific edit message
-      toast.loading("Editing document...", { id: "document-edit" });
-      
-      try {
-        console.log("Sending document edit request");
-        const updatedContent = await sendMessage(editingPrompt);
-        
-        if (updatedContent && onSendToDocument) {
-          // Add the user's message to the chat
-          addMessage("user", message);
-          
-          // Add a standardized response message
-          addMessage("assistant", "I've updated the document according to your instructions. The changes have been applied to the document editor.");
-          
-          // Update the document content
-          onSendToDocument(updatedContent);
-          toast.success("Document updated successfully", { id: "document-edit" });
-        } else {
-          toast.error("Failed to update document", { id: "document-edit" });
-        }
-      } catch (error) {
-        console.error("Error updating document:", error);
-        toast.error("Failed to update document", { id: "document-edit" });
-      } finally {
-        setIsMessageSending(false);
-        setIsEditMode(false);
-      }
-      
-      return;
-    }
-    
-    // Standard message handling for non-edit requests
+    // Standard message handling
     const message = inputMessage;
     setInputMessage("");
     try {
-      console.log(`Sending standard message in ${sessionType} mode`);
-      const response = await sendMessage(message);
-      
-      // For document-related responses in document mode, automatically update the document
-      if (sessionType === "document" && 
-          response && 
-          onSendToDocument && 
-          (response.startsWith("# ") || response.includes("## Executive Summary"))) {
-        onSendToDocument(response);
-        toast.success("Document updated with new content");
-      }
+      console.log(`Sending standard message in ${sessionType} mode: ${message}`);
+      await sendMessage(message);
     } catch (error) {
-      console.error("Error sending message:", error);
-      // Error is already handled in the hook, with fallback messages added
+      console.error("Error sending message from ChatInterface:", error);
     } finally {
       setIsMessageSending(false);
     }
@@ -214,121 +157,6 @@ Return ONLY the complete updated document content.`;
       .catch(() => toast.error("Failed to copy message"));
   };
 
-  // Format chat message for display
-  const formatChatMessage = (content: string) => {
-    // First, detect if this contains any common prompt patterns
-    const promptPatterns = [
-      "Generate a comprehensive", 
-      "Please edit the document with the following instructions:",
-      "Return ONLY the complete updated",
-      "This is the specific drug data",
-      "Here is comprehensive data about all related shortages",
-      "raw JSON format",
-      "Format the document in Markdown",
-      "system instruction",
-      "You are a helpful assistant",
-      "You are analyzing drug shortage data"
-    ];
-    
-    // Higher confidence system prompt patterns (instructions to the AI)
-    const systemInstructionPatterns = [
-      "You are a helpful assistant that",
-      "You are an AI assistant that",
-      "As an AI language model, your task is to",
-      "As an AI assistant, you will",
-      "prompt:",
-      "I want you to analyze",
-      "I need you to generate",
-      "Use the complete drug shortage data to create"
-    ];
-    
-    // Check for JSON data structures
-    const containsRawJSON = 
-      content.includes('{"id":') || 
-      content.includes('"type":"shortage"') ||
-      content.includes('"brand_name":') ||
-      content.includes('"dosage_form":') ||
-      content.includes('"report_id":') || 
-      content.includes('"drug_name":') ||
-      (content.match(/\{(\s*"[^"]+"\s*:)/g) && content.match(/\{(\s*"[^"]+"\s*:)/g).length > 2) || // Multiple JSON objects
-      (content.includes('{') && content.includes('}') && 
-       content.split('{').length > 3); // Multiple JSON blocks
-    
-    // Check if this looks like a full document
-    const isFullDocument = 
-      (content.startsWith("#") && 
-       (content.includes("# Drug Shortage Management Plan") || 
-        content.includes("Executive Summary") || 
-        content.includes("Product Details"))) ||
-      (content.includes("## Executive Summary") || 
-       content.includes("## Product Details") || 
-       content.includes("## Shortage Impact Assessment"));
-    
-    // High confidence system instruction check
-    const isDefinitelySystemInstruction = systemInstructionPatterns.some(pattern => 
-      content.includes(pattern)
-    );
-    
-    // Less strict prompt pattern check - require at least 2 patterns or a long message
-    const mightBePromptPattern = 
-      (promptPatterns.filter(pattern => content.includes(pattern)).length >= 2) ||
-      (promptPatterns.some(pattern => content.includes(pattern)) && content.length > 500);
-    
-    // Special case: Don't show system prompts with raw data
-    if ((isDefinitelySystemInstruction || mightBePromptPattern) && containsRawJSON) {
-      if (sessionType === "info") {
-        return "I'm analyzing the drug shortage data to provide you with comprehensive information. I'll be ready to answer your questions momentarily.";
-      } else {
-        return "I'm preparing document content based on the drug shortage data. This may take a moment...";
-      }
-    }
-    
-    // Special case: Full document in chat should be replaced with a message
-    if (sessionType === "document" && isFullDocument) {
-      return "I've updated the document according to your instructions. The changes have been applied to the document editor.";
-    }
-    
-    // Special case: Document edit confirmation should be simplified
-    if (content.includes("I've updated the document") && content.length > 300) {
-      return "I've updated the document according to your instructions. The changes have been applied to the document editor.";
-    }
-    
-    // Remove common AI prefixes like "As an AI assistant..." or "I'm analyzing..."
-    if (content.match(/^(As an AI assistant|I'm an AI assistant|I am an AI assistant|As a language model)/)) {
-      const cleanedContent = content.replace(/^(As an AI assistant[^\.]+\.|I'm an AI assistant[^\.]+\.|I am an AI assistant[^\.]+\.|As a language model[^\.]+\.)\s*/, '');
-      if (cleanedContent !== content) {
-        return cleanedContent;
-      }
-    }
-    
-    // Only filter definite system instructions, not just any message with prompt-like content
-    if (isDefinitelySystemInstruction) {
-      if (sessionType === "info") {
-        return "I'm analyzing the drug shortage data to provide a comprehensive response...";
-      } else {
-        return "I'm processing your request for the document...";
-      }
-    }
-    
-    // If it has extensive raw JSON that dominates the message, clean it
-    if (containsRawJSON && content.includes('"') && (content.split('"').length > 20)) {
-      // Try to find any human-readable text outside of JSON
-      const cleanedContent = content
-        .replace(/\{[^{}]*\}/g, '') // Remove simple JSON objects
-        .replace(/\{.*\}/gs, '')    // Remove multi-line JSON objects
-        .trim();
-        
-      if (cleanedContent.length > 50) {
-        return cleanedContent;
-      } else {
-        return "I'm processing the drug shortage data to prepare a response for you.";
-      }
-    }
-    
-    // Return the original content if no issues detected
-    return content;
-  };
-
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="px-4 py-3 border-b">
@@ -338,81 +166,53 @@ Return ONLY the complete updated document content.`;
       </CardHeader>
       <CardContent className="flex-1 overflow-y-auto p-4">
         <div className="space-y-4">
-          {messages.map((message) => {
-            // Format message content before rendering
-            const displayContent = formatChatMessage(message.content);
-            
-            // Skip rendering if formatChatMessage returns null (e.g., hidden system message)
-            if (displayContent === null) return null;
-            
-            return (
+          {messages.map((message) => (
             <div
               key={message.id}
-              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"} mb-4`}
+              className={`flex ${
+                message.role === "user" ? "justify-end" : "justify-start"
+              }`}
             >
               <div
-                className={`rounded-lg px-4 py-2 max-w-[80%] shadow-sm ${
+                className={`max-w-[80%] rounded-lg px-4 py-2 shadow-sm break-words ${
                   message.role === "user"
                     ? "bg-lumin-teal text-white"
-                    : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-100"
+                    : "bg-gray-100 text-gray-800"
                 }`}
               >
-                {/* Render user messages directly, assistant messages via ReactMarkdown */} 
-                {message.role === "user" ? (
-                   <p className="text-sm whitespace-pre-wrap">{displayContent}</p>
-                 ) : (
-                  <ReactMarkdown
-                    className="prose prose-sm dark:prose-invert max-w-none break-words"
-                    components={{
-                      // Ensure links open in a new tab
-                      a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
-                      // Add styling for code blocks if needed
-                      code: ({ node, inline, className, children, ...props }) => {
-                        const match = /language-(\w+)/.exec(className || '');
-                        return !inline && match ? (
-                          // Use a proper syntax highlighter here if needed
-                          <pre className="bg-gray-200 dark:bg-gray-800 p-2 rounded text-xs overflow-x-auto" {...props}>
-                            <code>{String(children).replace(/\n$/, '')}</code>
-                          </pre>
-                        ) : (
-                          <code className="bg-gray-200 dark:bg-gray-800 px-1 py-0.5 rounded text-xs" {...props}>
-                            {children}
-                          </code>
-                        );
-                      },
-                    }}
-                  >
-                    {displayContent}
-                  </ReactMarkdown>
-                 )}
-                {/* Timestamp - uncomment if needed
-                <p className="text-xs text-gray-500 mt-1 text-right">
-                  {new Date(message.timestamp).toLocaleTimeString()}
-                </p> */}
+                {message.role === "assistant" ? (
+                  <div className="prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2">
+                    <ReactMarkdown>
+                      {message.content}
+                    </ReactMarkdown>
+                    <div className="flex justify-end gap-1 mt-1 opacity-70 hover:opacity-100 transition-opacity">
+                      <TooltipProvider delayDuration={300}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <IconButton
+                              onClick={() => handleCopyMessage(message.content)}
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6 p-1 text-gray-500 hover:text-gray-700"
+                            >
+                              <Copy className="h-3 w-3" />
+                            </IconButton>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">
+                            <p>Copy message</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-sm">
+                    {message.content}
+                  </div>
+                )}
               </div>
-               {/* Add copy button for assistant messages */} 
-               {message.role === "assistant" && (
-                 <TooltipProvider>
-                   <Tooltip>
-                     <TooltipTrigger asChild>
-                       <IconButton
-                         variant="ghost"
-                         size="icon"
-                         className="ml-2 h-8 w-8 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                         onClick={() => handleCopyMessage(message.content)}
-                       >
-                         <Copy className="h-4 w-4" />
-                       </IconButton>
-                     </TooltipTrigger>
-                     <TooltipContent>
-                       <p>Copy message</p>
-                     </TooltipContent>
-                   </Tooltip>
-                 </TooltipProvider>
-               )}
             </div>
-            );
-          })}
+          ))}
           {showLoadingIndicator && (
             <div className="flex justify-start">
               <div className="max-w-[80%] rounded-lg px-4 py-2 bg-gray-100">

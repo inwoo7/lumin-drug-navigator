@@ -178,8 +178,8 @@ export const useOpenAIAssistant = ({
           timestamp: new Date(),
         };
         
-        // Add a placeholder message while we wait - DO NOT add to state
-        // setMessages([initialMessage]); // Removed this line
+        // Add a placeholder message while we wait
+        setMessages([initialMessage]);
         
         // Generate the document
         const generationPrompt = `Generate a comprehensive drug shortage management plan for ${drugShortageData.brand_name || drugShortageData.drug_name}. 
@@ -235,30 +235,47 @@ Format the document in Markdown with clear headings and sections.`;
           console.log("Thread ID set:", data.threadId);
         }
         
+        // Update document via callback
+        if (onDocumentUpdate && data.message) {
+          console.log("Calling onDocumentUpdate with document content");
+          onDocumentUpdate(data.message);
+        } else {
+          console.warn("Document update callback missing or no message content received");
+        }
+        
         // Update the chat with a confirmation message instead of showing system instructions
-        // Also, do not add this temporary message to the main state
-        /* Removed block:
         const completionMessage = {
           id: Date.now().toString(),
           role: "assistant" as const,
           content: "I've generated a document based on the drug shortage data. You can now ask me to make changes or explain any part of it.",
           timestamp: new Date(),
         };
-        setMessages([completionMessage]); 
-        */
-
-        // Ensure conversation is saved *after* potential document generation
-        // The actual conversation history (if any exists) should be saved,
-        // not the temporary generation messages.
-        // We might not have a threadId yet if this was the *very* first action.
-        if (data.threadId) {
-            // Pass threadId first, then the messages array
-            const threadToUse: string | null = data.threadId || null;
-            const messagesToSave: Message[] = [];
-            saveConversation(threadToUse, messagesToSave); // Save empty messages initially after generation
+        
+        // Replace the placeholder message with the completion message
+        setMessages([completionMessage]);
+        
+        // Save this conversation to the database
+        if (sessionId && data.threadId) {
+          try {
+            await supabase.rpc('save_ai_conversation', {
+              p_session_id: sessionId,
+              p_assistant_type: assistantType,
+              p_thread_id: data.threadId,
+              p_messages: JSON.stringify([completionMessage])
+            });
+            console.log("Saved conversation to database");
+          } catch (saveErr) {
+            console.error("Error saving conversation:", saveErr);
+          }
         }
-
-        setIsLoading(false);
+        
+        // After first generation, we don't need to send raw data anymore
+        setShouldSendRawData(false);
+        setIsInitialized(true);
+        
+        if (onStateChange) {
+          onStateChange({ isInitialized: true, isLoading: false });
+        }
       } catch (err: any) {
         console.error("Error generating document:", err);
         setError(err.message || "An error occurred");
@@ -266,6 +283,8 @@ Format the document in Markdown with clear headings and sections.`;
         if (onStateChange) {
           onStateChange({ isInitialized: false, isLoading: false });
         }
+      } finally {
+        setIsLoading(false);
       }
     };
     
@@ -439,8 +458,8 @@ Format your response with clear headings and bullet points where appropriate.`;
               // Replace the placeholder with the actual response
               setMessages([responseMessage]);
               
-              // Save this conversation to the database, passing threadId and messages
-              saveConversation(threadId, [responseMessage]);
+              // Save this conversation to the database
+              saveConversation([responseMessage]);
             }
             
             // After initialization, we don't need to send raw data anymore
@@ -503,342 +522,269 @@ Format your response with clear headings and bullet points where appropriate.`;
 
   // Enhanced function to send messages with document context
   const sendMessage = async (content: string) => {
-    if (!content.trim() || (isLoading && !isInitialized)) {
-      throw new Error("Cannot send message while loading or not initialized");
-    }
-    
-    // Set loading state
+    if (!content.trim() || !isInitialized) return;
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: "user",
+      content,
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
-    
-    console.log(`Sending message for ${assistantType} assistant. Document edit: ${content.includes("Please edit")}`);
-    
-    // Create unique message ID
-    const messageId = Date.now().toString();
-    
-    try {
-      // Add user message to chat
-      const userMessage = {
-        id: messageId,
-        role: "user" as const,
-        content,
-        timestamp: new Date(),
-      };
-      
-      // Check if this is a document edit request
-      const isDocEdit = (assistantType === "document" &&
-        (content.includes("Please edit the document") || 
-         content.toLowerCase().includes("update the document")));
-      
-      // Update messages in UI (optimistic update)
-      addMessage("user", content);
-      
-      // If we don't have a thread ID yet, we need to initialize
-      if (!threadId && !isRestoredSession) {
-        // We can't generate a thread here, so return a fallback message
-        console.log("No thread ID available and not initialized yet");
-      }
-      
-      // Return early with a message if we're in offline mode
-      if (!threadId) {
-        console.log("No thread ID available, returning fallback response");
-        
-        const fallbackMessage = {
-          id: Date.now().toString(),
-          role: "assistant" as const,
-          content: "I'm unable to connect to the AI service at this time. Please try again later.",
-          timestamp: new Date(),
-        };
-        
-        // Add fallback message
-        setMessages(prev => [...prev, fallbackMessage]);
-        
-        // Save conversation
-        saveConversation();
-        
-        return fallbackMessage.content;
-      }
-      
-      // Send the message to the assistant
-      const { data, error } = await supabase.functions.invoke("openai-assistant", {
-        body: {
-          assistantType,
-          messages: [{ role: "user", content }],
-          sessionId,
-          threadId,
-          drugData: drugShortageData,
-          allShortageData: allShortageData || [],
-          documentContent,
-          isDocumentEdit: isDocEdit,
-          rawData: false // Never send raw data for regular messages
-        },
-      });
-      
-      // If there was an error, handle it
-      if (error) {
-        console.error("Error sending message:", error);
-        
-        const errorMessage = {
-          id: Date.now().toString(),
-          role: "assistant" as const,
-          content: "I'm sorry, there was an error processing your request. Please try again.",
-          timestamp: new Date(),
-        };
-        
-        // Add error message
-        setMessages(prev => [...prev, errorMessage]);
-        
-        // Save conversation
-        saveConversation();
-        
-        // Return error message
-        return errorMessage.content;
-      }
-      
-      // Handle the response
-      if (data && data.message) {
-        let assistantResponse = data.message;
-        let chatResponse = data.message;
-        
-        // Function to detect if response contains document structure
-        const isDocumentContent = (text: string) => {
-          return assistantType === "document" && (
-            // Full document or sections
-            text.startsWith("# ") || 
-            text.includes("## Executive Summary") ||
-            text.includes("## Product Details") ||
-            text.includes("## Shortage Impact Assessment") ||
-            text.includes("## Therapeutic Alternatives") ||
-            text.includes("## Conservation Strategies") ||
-            
-            // Markdown formatting indicates document
-            (text.split("\n").filter(line => line.startsWith("#")).length >= 3) ||
-            
-            // Document language
-            text.includes("Drug Shortage Management Plan") ||
-            
-            // Explicit document edit confirmation
-            text.includes("I've updated the document")
-          );
-        };
-        
-        // For document edits or content, handle appropriately
-        if (isDocEdit || isDocumentContent(assistantResponse)) {
-          // For document edits, use standardized message
-          if (isDocEdit) {
-            chatResponse = "I've updated the document according to your instructions. The changes have been applied to the document editor.";
-          } else if (isDocumentContent(assistantResponse)) {
-            // For content that looks like a document but wasn't an explicit edit
-            chatResponse = "I've prepared content for your document based on the drug shortage data. The changes have been automatically applied to the document.";
-          }
-          
-          console.log("Document content detected, updating document");
-          
-          // For the document update, use the full content
-          if (onDocumentUpdate) {
-            onDocumentUpdate(assistantResponse);
-          }
-        }
-        
-        // Add AI response to messages
-        const responseMessage = {
-          id: Date.now().toString(),
-          role: "assistant" as const,
-          content: chatResponse, // Use the chat-friendly version for display
-          timestamp: new Date(),
-        };
-        
-        // Update messages
-        setMessages(prev => [...prev, responseMessage]);
-        
-        // Save conversation
-        saveConversation();
-        
-        // Return the full response for document purposes, or the chat response otherwise
-        return isDocEdit || isDocumentContent(assistantResponse) ? assistantResponse : chatResponse;
-      } else {
-        console.error("No message in response:", data);
-        
-        // If no message was returned but we didn't get an error, add a fallback message
-        const fallbackMessage = {
-          id: Date.now().toString(),
-          role: "assistant" as const,
-          content: "I'm sorry, I couldn't generate a response. Please try again with a different question.",
-          timestamp: new Date(),
-        };
-        
-        // Add fallback message
-        setMessages(prev => [...prev, fallbackMessage]);
-        
-        // Save conversation
-        saveConversation();
-        
-        // Return fallback message
-        return fallbackMessage.content;
-      }
-    } catch (err) {
-      console.error("Error in send message:", err);
-      
-      // Add error message
-      const errorMessage = {
-        id: Date.now().toString(),
-        role: "assistant" as const,
-        content: "I'm sorry, something went wrong. Please try again later.",
-        timestamp: new Date(),
-      };
-      
-      // Update messages
-      setMessages(prev => [...prev, errorMessage]);
-      
-      // Save conversation
-      saveConversation();
-      
-      // Return error message
-      return errorMessage.content;
-    } finally {
-      setIsLoading(false);
+    setError(null);
+    if (onStateChange) {
+      onStateChange({ isInitialized: true, isLoading: true });
     }
+
+    // Prepare message history (limit?) - consider token limits
+    const history = [...messages, userMessage]
+      .slice(-10) // Limit history to keep payload reasonable
+      .map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+      }));
+
+    let functionPayload: any = {
+      assistantType,
+      messages: history,
+      sessionId,
+      threadId, // Include threadId if available
+      drugData: drugShortageData, // Pass context for the AI
+      allShortageData: allShortageData, // Pass context for the AI
+      rawData: false, // Raw data only needed for initial generation
+    };
+
+    let isDocumentUpdateRequest = false; // Flag to track
+
+    // Specific handling for Document Assistant updates
+    if (assistantType === 'document' && isInitialized && documentContent !== undefined) {
+      console.log("[document] Preparing document update request.");
+      isDocumentUpdateRequest = true;
+      functionPayload = {
+        ...functionPayload,
+        updateDocument: true, // Flag for backend
+        currentDocumentContent: documentContent, // Current state
+        userRequest: content, // The user's specific request
+        // Override messages potentially - send only user request for clarity?
+        // messages: [{ role: 'user', content: content }] // Let's keep history for now
+      };
+    } else {
+      console.log(`[${assistantType}] Preparing standard chat request.`);
+    }
+
+    try {
+      console.log(`[${assistantType}] Calling Supabase function 'openai-assistant'... Payload keys:`, Object.keys(functionPayload));
+      const { data, error } = await supabase.functions.invoke("openai-assistant", {
+        body: functionPayload,
+      });
+
+      setIsLoading(false);
+      if (onStateChange) {
+        onStateChange({ isInitialized: true, isLoading: false });
+      }
+
+      if (error) {
+        console.error(`[${assistantType}] Supabase function error:`, error);
+        setError(`Error: ${error.message}`);
+        toast.error(`Assistant error: ${error.message}`);
+        // Remove the user message if the call failed?
+        // setMessages(prev => prev.slice(0, -1));
+        return; // Stop processing on error
+      }
+
+      if (data.error) {
+        console.error(`[${assistantType}] Error from assistant function:`, data.error);
+        setError(`Assistant error: ${data.error}`);
+        toast.error(`Assistant error: ${data.error}`);
+        return; // Stop processing on error
+      }
+
+      // Handle thread ID persistence
+      if (data.threadId && !threadId) {
+          console.log(`[${assistantType}] Received new thread ID: ${data.threadId}`);
+          setThreadId(data.threadId);
+          // Immediately save conversation state with the new thread ID
+          saveConversation([...messages, userMessage], data.threadId); 
+      }
+
+      if (data.message) {
+        console.log(`[${assistantType}] Received response message.`);
+        const assistantMessage: Message = {
+          id: data.id || Date.now().toString(), // Use ID from response if available
+          role: "assistant",
+          content: data.message,
+          timestamp: new Date(),
+        };
+
+        let finalMessages = [...messages, userMessage]; // Start with history + user message
+
+        // Handle document update response
+        if (isDocumentUpdateRequest) {
+            let updatedDocContent = null;
+            if (data.updatedDocumentContent) {
+                updatedDocContent = data.updatedDocumentContent;
+            } else if (isDocumentContent(data.message)) {
+                // Fallback: check if the main message IS the document
+                 console.warn("[document] No 'updatedDocumentContent' field, checking if main message is the document.");
+                 updatedDocContent = data.message;
+                 // Adjust chat message to be a confirmation
+                 assistantMessage.content = "I've updated the document based on your request.";
+            }
+
+            if (updatedDocContent !== null) {
+                console.log("[document] Calling onDocumentUpdate.");
+                if (onDocumentUpdate) {
+                    onDocumentUpdate(updatedDocContent);
+                } else {
+                    console.warn("[document] onDocumentUpdate callback is missing!");
+                }
+            } else {
+                console.warn("[document] Document update requested, but no updated content received or identified.");
+                 // Use the assistant message as is (might be explanation/error)
+            }
+            // Add the (potentially modified) assistant message to chat
+             finalMessages.push(assistantMessage);
+        } else {
+           // Standard chat response
+           finalMessages.push(assistantMessage);
+        }
+
+        setMessages(finalMessages);
+        // Save conversation after state is updated
+        saveConversation(finalMessages, threadId || data.threadId); // Pass threadId
+
+      } else {
+        console.warn(`[${assistantType}] No message content received from assistant.`);
+        // Save conversation state even if no message content received?
+        saveConversation([...messages, userMessage], threadId || data.threadId);
+      }
+    } catch (err: any) {
+      console.error(`[${assistantType}] Error sending message:`, err);
+      setError(err.message || "An unexpected error occurred.");
+      toast.error(`Error: ${err.message || "An unexpected error occurred."}`);
+      setIsLoading(false);
+      if (onStateChange) {
+        onStateChange({ isInitialized: true, isLoading: false });
+      }
+      // Consider saving state even on catch?
+      saveConversation([...messages, userMessage], threadId);
+    }
+  };
+
+  // Utility function to check if text looks like a markdown document
+  // Very basic check - might need refinement
+  const isDocumentContent = (text: string): boolean => {
+    if (!text || typeof text !== 'string') return false;
+    // Look for multiple markdown headers or typical document length
+    const headerCount = (text.match(/^#{1,3}\s/gm) || []).length;
+    return headerCount > 2 || text.length > 500; // Arbitrary thresholds
   };
 
   // Helper function to save conversation to database
-  const saveConversation = async (threadToSave: string | null = threadId, newMessages?: Message[]) => {
-    // Use provided threadId or the state one
-    const currentThreadId = threadToSave || threadId;
-    if (!sessionId || !currentThreadId) return;
-    
-    try {
-      // Prepare the full message list to save (include new messages if provided)
-      const allMessages = newMessages 
-        ? [...messages, ...newMessages] // Combine existing state with new ones for saving
-        : messages; // Save only existing state messages
-      
-      // Skip saving if there are no messages in the combined list
-      if (allMessages.length === 0) {
-        console.log(`[${assistantType}] No messages to save for session ${sessionId}`);
-        return;
-      }
-      
-      // Format messages for database storage
-      const formattedMessages = allMessages.map(msg => ({
-        id: msg.id,
-        role: msg.role,
-        content: msg.content,
-        timestamp: msg.timestamp.toISOString()
-      }));
-      
-      // Save to database - PASS THE OBJECT DIRECTLY, NOT STRINGIFIED
-      await supabase.rpc('save_ai_conversation', {
-        p_session_id: sessionId,
-        p_assistant_type: assistantType,
-        p_thread_id: currentThreadId,
-        p_messages: formattedMessages // Pass the object directly
-      });
-      
-      console.log(`Saved ${formattedMessages.length} messages for ${assistantType} conversation using thread ${currentThreadId}`);
-    } catch (saveErr) {
-      console.error(`[${assistantType}] Error saving conversation:`, saveErr);
-    }
-  };
+  const saveConversation = async (messagesToSaveExplicit?: Message[], currentThreadId?: string | null) => {
+    const currentSessionId = sessionId;
+    const threadToSave = currentThreadId !== undefined ? currentThreadId : threadId;
 
-  // Utility function to debug saved conversation state
-  const loadMessages = async () => {
-    if (!sessionId) {
-      console.log("Cannot load messages without a session ID");
+    if (!currentSessionId || !threadToSave) {
+      console.warn("Cannot save conversation: Missing sessionId or threadId.", { currentSessionId, threadToSave });
       return;
     }
-    
+
+    const messagesToSave = messagesToSaveExplicit || messages;
+    if (messagesToSave.length === 0) {
+      console.log("No messages to save.");
+      return;
+    }
+
+    console.log(`Saving conversation for session: ${currentSessionId}, thread: ${threadToSave}, assistant: ${assistantType}`);
+
     try {
-      console.log(`Attempting to load conversation for debug: ${sessionId}, ${assistantType}`);
-      
-      const { data, error } = await supabase
-        .rpc('get_ai_conversation', { 
-          p_session_id: sessionId, 
-          p_assistant_type: assistantType 
-        });
-        
-      if (error) {
-        console.error("Debug loading error:", error);
-        return;
-      }
-      
-      console.log("Debug conversation data:", data);
-      
-      if (data && data.length > 0) {
-        console.log("Thread ID:", data[0].thread_id);
-        console.log("Messages:", data[0].messages);
-        
-        // Check messages format
-        if (typeof data[0].messages === 'string') {
-          try {
-            const parsed = JSON.parse(data[0].messages);
-            console.log("Parsed messages:", parsed);
-            
-            // If there are messages and we don't have any loaded, use them
-            if (Array.isArray(parsed) && parsed.length > 0 && messages.length === 0) {
-              console.log("[Debug] Setting messages from debug load (parsed string)");
-              
-              const formattedMessages = parsed.map((msg: any) => ({
-                id: msg.id || Date.now().toString(),
-                role: msg.role as "user" | "assistant",
-                content: msg.content,
-                timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
-              }));
-              
-              setMessages(formattedMessages);
-              setIsInitialized(true);
-              setIsRestoredSession(true);
-            }
-          } catch (e) {
-            console.error("Failed to parse debug messages:", e);
-          }
-        } else if (Array.isArray(data[0].messages) && data[0].messages.length > 0 && messages.length === 0) {
-           // Handle case where messages are already a JSON array/object
-           console.log("[Debug] Setting messages from debug load (direct array/object)");
-           const directMessages = data[0].messages;
-           const formattedMessages = directMessages.map((msg: any) => ({
-             id: msg.id || Date.now().toString(),
-             role: msg.role as "user" | "assistant",
-             content: msg.content,
-             timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
-           }));
+      const payload = {
+        p_session_id: currentSessionId,
+        p_assistant_type: assistantType,
+        p_thread_id: threadToSave,
+        p_messages: JSON.stringify(messagesToSave.map(m => ({ // Ensure consistent format
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            timestamp: m.timestamp.toISOString() // Store as ISO string
+        }))),
+      };
+      console.log("Payload for save_ai_conversation:", payload);
 
-           setMessages(formattedMessages);
-           setIsInitialized(true);
-           setIsRestoredSession(true);
+      const { error: rpcError } = await supabase.rpc('save_ai_conversation', payload);
 
-        } else if (messages.length > 0) {
-            console.log("[Debug] Messages already loaded, skipping debug set.");
-        } else {
-             console.log("[Debug] No usable messages found in debug data.");
-        }
+      if (rpcError) {
+        console.error("Error saving conversation via RPC:", rpcError);
+        toast.error("Error saving conversation progress.");
       } else {
-        console.log("No debug conversation data found");
+        console.log("Conversation saved successfully.");
       }
     } catch (err) {
-      console.error("Debug loading error:", err);
+      console.error("Exception saving conversation:", err);
+      toast.error("Failed to save conversation progress.");
     }
   };
-  
-  // If no messages were loaded but we have a session, try debug load
-  useEffect(() => {
-    if (sessionId && isInitialized && messages.length === 0) {
-      console.log("No messages loaded but session exists, trying debug load");
-      loadMessages();
-    }
-  }, [sessionId, isInitialized, messages.length]);
 
-  useEffect(() => {
-    if (onStateChange) {
-      onStateChange({ isInitialized, isLoading });
-    }
-  }, [isInitialized, isLoading, onStateChange]);
-
-  return {
-    messages,
-    isLoading,
-    error,
-    sendMessage,
-    addMessage,
-    isInitialized,
-    threadId,
+  // Function to load messages explicitly if needed (e.g., refresh button)
+  const loadMessages = async () => {
+      if (!sessionId) return;
+      setIsLoading(true);
+      try {
+        console.log(`[${assistantType}] Manually reloading conversation for session ${sessionId}`);
+        const { data: conversations, error } = await supabase
+          .rpc('get_ai_conversation', { 
+            p_session_id: sessionId, 
+            p_assistant_type: assistantType 
+          });
+          
+        if (error) throw error;
+        
+        if (conversations && conversations.length > 0) {
+          const conversationData = conversations[0];
+          setThreadId(conversationData.thread_id);
+          
+          let messagesArray = [];
+          if (conversationData.messages) {
+            if (typeof conversationData.messages === 'string') {
+              try { messagesArray = JSON.parse(conversationData.messages); } catch (e) { /* handle error */ }
+            } else if (typeof conversationData.messages === 'object') {
+              messagesArray = Array.isArray(conversationData.messages) ? conversationData.messages : [];
+            }
+          }
+          
+          if (messagesArray.length > 0) {
+            const storedMessages = messagesArray.map((msg: any) => ({
+              id: msg.id || Date.now().toString(),
+              role: msg.role as "user" | "assistant",
+              content: msg.content,
+              timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
+            }));
+            setMessages(storedMessages);
+            setIsInitialized(true);
+            setIsRestoredSession(true); // Mark as restored
+            console.log(`[${assistantType}] Successfully reloaded ${storedMessages.length} messages.`);
+          } else {
+              setMessages([]); // Clear messages if none found
+              setIsInitialized(false); // Reset initialization if no messages
+              setIsRestoredSession(false);
+              console.log(`[${assistantType}] Reloaded session, but no messages found.`);
+          }
+        } else {
+          setMessages([]); // Clear if no conversation found
+          setIsInitialized(false);
+          setIsRestoredSession(false);
+           console.log(`[${assistantType}] No conversation found during reload.`);
+        }
+      } catch (err) {
+        console.error(`[${assistantType}] Error reloading conversation:`, err);
+        toast.error("Failed to reload conversation.");
+      } finally {
+        setIsLoading(false);
+      }
   };
+
+  return { messages, isLoading, error, sendMessage, addMessage, threadId, isInitialized };
 };
