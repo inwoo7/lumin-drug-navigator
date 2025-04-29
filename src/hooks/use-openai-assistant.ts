@@ -178,8 +178,8 @@ export const useOpenAIAssistant = ({
           timestamp: new Date(),
         };
         
-        // Add a placeholder message while we wait
-        setMessages([initialMessage]);
+        // Add a placeholder message while we wait - DO NOT add to state
+        // setMessages([initialMessage]); // Removed this line
         
         // Generate the document
         const generationPrompt = `Generate a comprehensive drug shortage management plan for ${drugShortageData.brand_name || drugShortageData.drug_name}. 
@@ -235,47 +235,30 @@ Format the document in Markdown with clear headings and sections.`;
           console.log("Thread ID set:", data.threadId);
         }
         
-        // Update document via callback
-        if (onDocumentUpdate && data.message) {
-          console.log("Calling onDocumentUpdate with document content");
-          onDocumentUpdate(data.message);
-        } else {
-          console.warn("Document update callback missing or no message content received");
-        }
-        
         // Update the chat with a confirmation message instead of showing system instructions
+        // Also, do not add this temporary message to the main state
+        /* Removed block:
         const completionMessage = {
           id: Date.now().toString(),
           role: "assistant" as const,
           content: "I've generated a document based on the drug shortage data. You can now ask me to make changes or explain any part of it.",
           timestamp: new Date(),
         };
-        
-        // Replace the placeholder message with the completion message
-        setMessages([completionMessage]);
-        
-        // Save this conversation to the database
-        if (sessionId && data.threadId) {
-          try {
-            await supabase.rpc('save_ai_conversation', {
-              p_session_id: sessionId,
-              p_assistant_type: assistantType,
-              p_thread_id: data.threadId,
-              p_messages: JSON.stringify([completionMessage])
-            });
-            console.log("Saved conversation to database");
-          } catch (saveErr) {
-            console.error("Error saving conversation:", saveErr);
-          }
+        setMessages([completionMessage]); 
+        */
+
+        // Ensure conversation is saved *after* potential document generation
+        // The actual conversation history (if any exists) should be saved,
+        // not the temporary generation messages.
+        // We might not have a threadId yet if this was the *very* first action.
+        if (data.threadId) {
+            // Pass threadId first, then the messages array
+            const threadToUse: string | null = data.threadId || null;
+            const messagesToSave: Message[] = [];
+            saveConversation(threadToUse, messagesToSave); // Save empty messages initially after generation
         }
-        
-        // After first generation, we don't need to send raw data anymore
-        setShouldSendRawData(false);
-        setIsInitialized(true);
-        
-        if (onStateChange) {
-          onStateChange({ isInitialized: true, isLoading: false });
-        }
+
+        setIsLoading(false);
       } catch (err: any) {
         console.error("Error generating document:", err);
         setError(err.message || "An error occurred");
@@ -283,8 +266,6 @@ Format the document in Markdown with clear headings and sections.`;
         if (onStateChange) {
           onStateChange({ isInitialized: false, isLoading: false });
         }
-      } finally {
-        setIsLoading(false);
       }
     };
     
@@ -458,8 +439,8 @@ Format your response with clear headings and bullet points where appropriate.`;
               // Replace the placeholder with the actual response
               setMessages([responseMessage]);
               
-              // Save this conversation to the database
-              saveConversation([responseMessage]);
+              // Save this conversation to the database, passing threadId and messages
+              saveConversation(threadId, [responseMessage]);
             }
             
             // After initialization, we don't need to send raw data anymore
@@ -719,17 +700,22 @@ Format your response with clear headings and bullet points where appropriate.`;
   };
 
   // Helper function to save conversation to database
-  const saveConversation = async (newMessages?: Message[]) => {
-    if (!sessionId || !threadId) return;
+  const saveConversation = async (threadToSave: string | null = threadId, newMessages?: Message[]) => {
+    // Use provided threadId or the state one
+    const currentThreadId = threadToSave || threadId;
+    if (!sessionId || !currentThreadId) return;
     
     try {
       // Prepare the full message list to save (include new messages if provided)
       const allMessages = newMessages 
-        ? [...messages, ...newMessages]
-        : messages;
+        ? [...messages, ...newMessages] // Combine existing state with new ones for saving
+        : messages; // Save only existing state messages
       
-      // Skip saving if there are no messages
-      if (allMessages.length === 0) return;
+      // Skip saving if there are no messages in the combined list
+      if (allMessages.length === 0) {
+        console.log(`[${assistantType}] No messages to save for session ${sessionId}`);
+        return;
+      }
       
       // Format messages for database storage
       const formattedMessages = allMessages.map(msg => ({
@@ -739,17 +725,17 @@ Format your response with clear headings and bullet points where appropriate.`;
         timestamp: msg.timestamp.toISOString()
       }));
       
-      // Save to database
+      // Save to database - PASS THE OBJECT DIRECTLY, NOT STRINGIFIED
       await supabase.rpc('save_ai_conversation', {
         p_session_id: sessionId,
         p_assistant_type: assistantType,
-        p_thread_id: threadId,
-        p_messages: JSON.stringify(formattedMessages)
+        p_thread_id: currentThreadId,
+        p_messages: formattedMessages // Pass the object directly
       });
       
-      console.log(`Saved ${formattedMessages.length} messages for ${assistantType} conversation`);
+      console.log(`Saved ${formattedMessages.length} messages for ${assistantType} conversation using thread ${currentThreadId}`);
     } catch (saveErr) {
-      console.error("Error saving conversation:", saveErr);
+      console.error(`[${assistantType}] Error saving conversation:`, saveErr);
     }
   };
 
@@ -788,7 +774,7 @@ Format your response with clear headings and bullet points where appropriate.`;
             
             // If there are messages and we don't have any loaded, use them
             if (Array.isArray(parsed) && parsed.length > 0 && messages.length === 0) {
-              console.log("Setting messages from debug load");
+              console.log("[Debug] Setting messages from debug load (parsed string)");
               
               const formattedMessages = parsed.map((msg: any) => ({
                 id: msg.id || Date.now().toString(),
@@ -804,6 +790,25 @@ Format your response with clear headings and bullet points where appropriate.`;
           } catch (e) {
             console.error("Failed to parse debug messages:", e);
           }
+        } else if (Array.isArray(data[0].messages) && data[0].messages.length > 0 && messages.length === 0) {
+           // Handle case where messages are already a JSON array/object
+           console.log("[Debug] Setting messages from debug load (direct array/object)");
+           const directMessages = data[0].messages;
+           const formattedMessages = directMessages.map((msg: any) => ({
+             id: msg.id || Date.now().toString(),
+             role: msg.role as "user" | "assistant",
+             content: msg.content,
+             timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
+           }));
+
+           setMessages(formattedMessages);
+           setIsInitialized(true);
+           setIsRestoredSession(true);
+
+        } else if (messages.length > 0) {
+            console.log("[Debug] Messages already loaded, skipping debug set.");
+        } else {
+             console.log("[Debug] No usable messages found in debug data.");
         }
       } else {
         console.log("No debug conversation data found");

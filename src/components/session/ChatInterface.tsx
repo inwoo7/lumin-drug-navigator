@@ -338,54 +338,81 @@ Return ONLY the complete updated document content.`;
       </CardHeader>
       <CardContent className="flex-1 overflow-y-auto p-4">
         <div className="space-y-4">
-          {messages.map((message) => (
+          {messages.map((message) => {
+            // Format message content before rendering
+            const displayContent = formatChatMessage(message.content);
+            
+            // Skip rendering if formatChatMessage returns null (e.g., hidden system message)
+            if (displayContent === null) return null;
+            
+            return (
             <div
               key={message.id}
-              className={`flex ${
-                message.role === "user" ? "justify-end" : "justify-start"
-              }`}
+              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"} mb-4`}
             >
               <div
-                className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                className={`rounded-lg px-4 py-2 max-w-[80%] shadow-sm ${
                   message.role === "user"
                     ? "bg-lumin-teal text-white"
-                    : "bg-gray-100 text-gray-800"
+                    : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-100"
                 }`}
               >
-                <div className="prose prose-sm max-w-none">
-                  {message.role === "assistant" ? (
-                    <>
-                      <ReactMarkdown>
-                        {formatChatMessage(message.content)}
-                      </ReactMarkdown>
-                      
-                      <div className="flex justify-end gap-1 mt-2">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <IconButton
-                                onClick={() => handleCopyMessage(message.content)}
-                                size="icon"
-                                variant="ghost"
-                                className="h-7 w-7 p-0"
-                              >
-                                <Copy className="h-3 w-3" />
-                              </IconButton>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Copy to clipboard</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </div>
-                    </>
-                  ) : (
-                    message.content
-                  )}
-                </div>
+                {/* Render user messages directly, assistant messages via ReactMarkdown */} 
+                {message.role === "user" ? (
+                   <p className="text-sm whitespace-pre-wrap">{displayContent}</p>
+                 ) : (
+                  <ReactMarkdown
+                    className="prose prose-sm dark:prose-invert max-w-none break-words"
+                    components={{
+                      // Ensure links open in a new tab
+                      a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+                      // Add styling for code blocks if needed
+                      code: ({ node, inline, className, children, ...props }) => {
+                        const match = /language-(\w+)/.exec(className || '');
+                        return !inline && match ? (
+                          // Use a proper syntax highlighter here if needed
+                          <pre className="bg-gray-200 dark:bg-gray-800 p-2 rounded text-xs overflow-x-auto" {...props}>
+                            <code>{String(children).replace(/\n$/, '')}</code>
+                          </pre>
+                        ) : (
+                          <code className="bg-gray-200 dark:bg-gray-800 px-1 py-0.5 rounded text-xs" {...props}>
+                            {children}
+                          </code>
+                        );
+                      },
+                    }}
+                  >
+                    {displayContent}
+                  </ReactMarkdown>
+                 )}
+                {/* Timestamp - uncomment if needed
+                <p className="text-xs text-gray-500 mt-1 text-right">
+                  {new Date(message.timestamp).toLocaleTimeString()}
+                </p> */}
               </div>
+               {/* Add copy button for assistant messages */} 
+               {message.role === "assistant" && (
+                 <TooltipProvider>
+                   <Tooltip>
+                     <TooltipTrigger asChild>
+                       <IconButton
+                         variant="ghost"
+                         size="icon"
+                         className="ml-2 h-8 w-8 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                         onClick={() => handleCopyMessage(message.content)}
+                       >
+                         <Copy className="h-4 w-4" />
+                       </IconButton>
+                     </TooltipTrigger>
+                     <TooltipContent>
+                       <p>Copy message</p>
+                     </TooltipContent>
+                   </Tooltip>
+                 </TooltipProvider>
+               )}
             </div>
-          ))}
+            );
+          })}
           {showLoadingIndicator && (
             <div className="flex justify-start">
               <div className="max-w-[80%] rounded-lg px-4 py-2 bg-gray-100">
