@@ -15,12 +15,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { SessionDocument } from "@/types/supabase-rpc";
 import { useOpenAIAssistant } from "@/hooks/use-openai-assistant";
 
-// Helper function to get tab from URL
-const getTabFromUrl = (search: string): string => {
-  const params = new URLSearchParams(search);
-  return params.get('tab') || 'info'; // Default to 'info'
-};
-
 const SessionPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const location = useLocation();
@@ -30,8 +24,7 @@ const SessionPage = () => {
   const [documentContent, setDocumentContent] = useState("");
   const [selectedReportId, setSelectedReportId] = useState<string | undefined>();
   const [selectedReportType, setSelectedReportType] = useState<'shortage' | 'discontinuation'>('shortage');
-  // Initialize activeTab from URL
-  const [activeTab, setActiveTab] = useState(() => getTabFromUrl(location.search));
+  const [activeTab, setActiveTab] = useState("info");
   const [isDocumentInitializing, setIsDocumentInitializing] = useState(false);
   const [isDocumentGenerated, setIsDocumentGenerated] = useState(false);
   const [docGenerationError, setDocGenerationError] = useState(false);
@@ -51,19 +44,35 @@ const SessionPage = () => {
     sessionId
   );
   
+  // Add this useEffect to log state changes
+  useEffect(() => {
+    // Avoid logging the initial empty state excessively
+    if (documentContent !== "") {
+        console.log("SessionPage: documentContent state updated. New length:", documentContent?.length);
+    }
+  }, [documentContent]);
+  
   // Initialize the Document AI Assistant with error handling
   const documentAssistant = useOpenAIAssistant({
     assistantType: "document",
     sessionId,
     drugShortageData: selectedReportData,
     documentContent,
-    // Only auto-initialize if we have report data AND no document is generated yet AND we haven't tried loading
     autoInitialize: !!selectedReportData && !isDocumentGenerated && !docLoadAttempted && documentContent === "",
     generateDocument: !!selectedReportData && !isDocumentGenerated && documentContent === "",
-    onDocumentUpdate: (content) => {
+    onDocumentUpdate: (newContent) => {
       console.log("SessionPage: onDocumentUpdate called by hook.");
-      // Always update the document content when the hook provides it
-      setDocumentContent(content);
+      console.log(`   - Received content length: ${newContent?.length}`);
+      console.log(`   - Current state length before update: ${documentContent?.length}`);
+      // Check if content actually changed before updating state and saving
+      if (newContent !== documentContent) {
+          console.log("   - Content is different, calling setDocumentContent and saveDocument.")
+          setDocumentContent(newContent); // This should trigger the useEffect above
+          saveDocument(newContent);
+      } else {
+          console.log("   - Received content is the same as current state. Skipping update.");
+      }
+      
       // Mark as generated if not already
       if (!isDocumentGenerated) {
           setIsDocumentGenerated(true);
@@ -73,8 +82,6 @@ const SessionPage = () => {
        if (!isDocumentAssistantReady) {
            setIsDocumentAssistantReady(true);
        }
-       // Save the updated document
-      saveDocument(content);
     },
     onStateChange: (state) => {
       // Mark document assistant ready when initialized
@@ -381,11 +388,9 @@ const SessionPage = () => {
     }
   };
 
-  // Handle tab change - update state and URL
+  // Handle tab change
   const handleTabChange = (value: string) => {
     setActiveTab(value);
-    // Update URL query parameter without adding to history
-    navigate(`${location.pathname}?tab=${value}`, { replace: true, state: location.state });
   };
 
   // Add a timeout to prevent getting stuck on loading screen
@@ -434,7 +439,7 @@ const SessionPage = () => {
       
       <Separator />
       
-      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+      <Tabs defaultValue={activeTab} value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList>
           <TabsTrigger value="info" className="flex items-center">
             <MessageSquare className="h-4 w-4 mr-2" />

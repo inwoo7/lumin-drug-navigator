@@ -180,36 +180,36 @@ export function ChatInterface({
                     : "bg-gray-100 text-gray-800"
                 }`}
               >
-                {message.role === "assistant" ? (
+                  {message.role === "assistant" ? (
                   <div className="prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2">
-                    <ReactMarkdown>
+                      <ReactMarkdown>
                       {message.content}
-                    </ReactMarkdown>
+                      </ReactMarkdown>
                     <div className="flex justify-end gap-1 mt-1 opacity-70 hover:opacity-100 transition-opacity">
                       <TooltipProvider delayDuration={300}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <IconButton
-                              onClick={() => handleCopyMessage(message.content)}
-                              size="icon"
-                              variant="ghost"
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <IconButton
+                                onClick={() => handleCopyMessage(message.content)}
+                                size="icon"
+                                variant="ghost"
                               className="h-6 w-6 p-1 text-gray-500 hover:text-gray-700"
-                            >
-                              <Copy className="h-3 w-3" />
-                            </IconButton>
-                          </TooltipTrigger>
+                              >
+                                <Copy className="h-3 w-3" />
+                              </IconButton>
+                            </TooltipTrigger>
                           <TooltipContent side="top">
                             <p>Copy message</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
                   </div>
-                ) : (
+                  ) : (
                   <div className="text-sm">
                     {message.content}
                   </div>
-                )}
+                  )}
               </div>
             </div>
           ))}
