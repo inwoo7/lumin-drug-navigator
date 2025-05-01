@@ -660,14 +660,18 @@ Format your response with clear headings and bullet points where appropriate.`;
         // Handle document update response
         if (isDocumentUpdateRequest) {
             let updatedDocContent = null;
+            let confirmationMessage = "I've updated the document based on your request."; // Default confirmation
+
             if (data.updatedDocumentContent) {
                 updatedDocContent = data.updatedDocumentContent;
+                // Use default confirmation message
             } else if (isDocumentContent(data.message)) {
-                // Fallback: check if the main message IS the document
                  console.warn("[document] No 'updatedDocumentContent' field, checking if main message is the document.");
                  updatedDocContent = data.message;
-                 // Adjust chat message to be a confirmation
-                 assistantMessage.content = "I've updated the document based on your request.";
+                 // Main message IS the document, so use default confirmation
+            } else {
+                 // No updated document found, maybe AI explained why? Use its message.
+                 confirmationMessage = data.message; 
             }
 
             if (updatedDocContent !== null) {
@@ -676,11 +680,18 @@ Format your response with clear headings and bullet points where appropriate.`;
                     onDocumentUpdate(updatedDocContent);
                 } else {
                     console.warn("[document] onDocumentUpdate callback is missing!");
-          }
+                }
+                // Append refresh note ONLY if update was successful
+                confirmationMessage += " Please refresh to view changes.";
+
             } else {
                 console.warn("[document] Document update requested, but no updated content received or identified.");
-                 // Use the assistant message as is (might be explanation/error)
+                 // Don't add refresh message if update failed/was just explanation
             }
+            
+            // Update the content of the assistant message object
+            assistantMessage.content = confirmationMessage;
+            
             // Add the (potentially modified) assistant message to chat
              finalMessages.push(assistantMessage);
         } else {

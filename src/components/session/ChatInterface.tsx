@@ -3,7 +3,7 @@ import { Button as IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { SendIcon, Loader2, FileEdit, AlertTriangle, Copy, Edit } from "lucide-react";
+import { SendIcon, Loader2, FileEdit, AlertTriangle, Copy, Edit, RefreshCw } from "lucide-react";
 import { useOpenAIAssistant, Message as AIMessage, AssistantType } from "@/hooks/use-openai-assistant";
 import { useDrugShortageReport, useDrugShortageSearch } from "@/hooks/use-drug-shortages";
 import { toast } from "sonner";
@@ -166,53 +166,84 @@ export function ChatInterface({
       </CardHeader>
       <CardContent className="flex-1 overflow-y-auto p-4">
         <div className="space-y-4">
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${
-                message.role === "user" ? "justify-end" : "justify-start"
-              }`}
-            >
+          {messages.map((message) => {
+            // Determine if this message confirms an update requiring refresh
+            const isUpdateConfirmation = 
+              message.role === 'assistant' && 
+              message.content.includes("Please refresh to view changes.");
+              
+            // Return the JSX structure for each message
+            return (
               <div
-                className={`max-w-[80%] rounded-lg px-4 py-2 shadow-sm break-words ${
-                  message.role === "user"
-                    ? "bg-lumin-teal text-white"
-                    : "bg-gray-100 text-gray-800"
+                key={message.id}
+                className={`flex ${
+                  message.role === "user" ? "justify-end" : "justify-start"
                 }`}
               >
+                <div
+                  className={`max-w-[80%] rounded-lg px-4 py-2 shadow-sm break-words ${
+                    message.role === "user"
+                      ? "bg-lumin-teal text-white"
+                      : "bg-gray-100 text-gray-800"
+                  }`}
+                >
                   {message.role === "assistant" ? (
-                  <div className="prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2">
+                    <div className="prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2">
                       <ReactMarkdown>
-                      {message.content}
+                        {message.content}
                       </ReactMarkdown>
-                    <div className="flex justify-end gap-1 mt-1 opacity-70 hover:opacity-100 transition-opacity">
-                      <TooltipProvider delayDuration={300}>
+                      {/* Action buttons for assistant messages */}
+                      <div className="flex justify-end items-center gap-1 mt-1 opacity-70 hover:opacity-100 transition-opacity">
+                        {/* Refresh Button (Conditional) */}
+                        {isUpdateConfirmation && (
+                          <TooltipProvider delayDuration={300}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <IconButton
+                                  onClick={() => window.location.reload()}
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6 p-1 text-blue-600 hover:text-blue-800"
+                                >
+                                  <RefreshCw className="h-3 w-3" />
+                                </IconButton>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                <p>Refresh Page</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                        {/* Copy Button */}
+                        <TooltipProvider delayDuration={300}>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <IconButton
                                 onClick={() => handleCopyMessage(message.content)}
                                 size="icon"
                                 variant="ghost"
-                              className="h-6 w-6 p-1 text-gray-500 hover:text-gray-700"
+                                className="h-6 w-6 p-1 text-gray-500 hover:text-gray-700"
                               >
                                 <Copy className="h-3 w-3" />
                               </IconButton>
                             </TooltipTrigger>
-                          <TooltipContent side="top">
-                            <p>Copy message</p>
+                            <TooltipContent side="top">
+                              <p>Copy message</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                       </div>
-                  </div>
+                    </div>
                   ) : (
-                  <div className="text-sm">
-                    {message.content}
-                  </div>
+                    /* Render user message content directly */
+                    <div className="text-sm">
+                      {message.content}
+                    </div>
                   )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {showLoadingIndicator && (
             <div className="flex justify-start">
               <div className="max-w-[80%] rounded-lg px-4 py-2 bg-gray-100">
