@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { AIConversation } from "@/types/supabase-rpc";
@@ -45,6 +45,14 @@ export const useOpenAIAssistant = ({
   const [hasAttemptedGeneration, setHasAttemptedGeneration] = useState<boolean>(false);
   const [isRestoredSession, setIsRestoredSession] = useState<boolean>(false);
   const [shouldSendRawData, setShouldSendRawData] = useState<boolean>(rawApiData);
+
+  // Ref to store the latest onDocumentUpdate callback
+  const onDocumentUpdateRef = useRef(onDocumentUpdate);
+
+  // Effect to keep the ref updated with the latest callback function
+  useEffect(() => {
+    onDocumentUpdateRef.current = onDocumentUpdate;
+  }, [onDocumentUpdate]);
 
   // Load existing conversation from database
   useEffect(() => {
@@ -671,11 +679,12 @@ Format your response with clear headings and bullet points where appropriate.`;
             }
 
             if (updatedDocContent !== null) {
-                console.log("[document] Calling onDocumentUpdate.");
-                if (onDocumentUpdate) {
-                    onDocumentUpdate(updatedDocContent);
+                console.log("[document] Calling onDocumentUpdate via ref.");
+                // Access the callback via the ref's current property
+                if (onDocumentUpdateRef.current) {
+                    onDocumentUpdateRef.current(updatedDocContent);
                 } else {
-                    console.warn("[document] onDocumentUpdate callback is missing!");
+                    console.warn("[document] onDocumentUpdateRef.current is missing!");
                 }
             } else {
                 console.warn("[document] Document update requested, but no updated content received or identified.");
