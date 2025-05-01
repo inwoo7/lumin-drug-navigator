@@ -29,10 +29,14 @@ const DocumentEditor = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isPdfExporting, setIsPdfExporting] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
+  const isProgrammaticChange = useRef(false);
 
   useEffect(() => {
-    console.log("DocumentEditor: initialContent prop changed, updating internal state.");
-    setContent(initialContent);
+    if (initialContent !== content) {
+      console.log("DocumentEditor: initialContent prop changed, updating internal state.");
+      isProgrammaticChange.current = true;
+      setContent(initialContent);
+    }
   }, [initialContent]);
 
   useEffect(() => {
@@ -47,11 +51,17 @@ const DocumentEditor = ({
       
     setPreviewContent(htmlContent);
     
-    onContentChange(content);
-  }, [content, onContentChange]);
+    isProgrammaticChange.current = false;
+  }, [content]);
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setContent(e.target.value);
+    const newContent = e.target.value;
+    setContent(newContent);
+    
+    if (!isProgrammaticChange.current) {
+       console.log("DocumentEditor: User input detected, calling onContentChange.");
+       onContentChange(newContent);
+    }
   };
 
   const handleSaveDocument = async () => {
