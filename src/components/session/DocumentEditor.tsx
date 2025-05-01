@@ -71,16 +71,18 @@ const DocumentEditor = ({
 
   // Effect to synchronize internal state with initialContent prop changes *after* load
   useEffect(() => {
-    // Only update if:
-    // 1. Initial load is complete (isLoaded is true)
-    // 2. initialContent prop is defined
-    // 3. The prop value is different from the current internal state
-    if (isLoaded && initialContent !== undefined && initialContent !== content) {
-      console.log("DocumentEditor: Prop initialContent changed, updating internal state.");
-      setContent(initialContent);
+    // Only update if initial load is complete and the prop is defined.
+    if (isLoaded && initialContent !== undefined) {
+      // Check if the prop value is different from the current internal state.
+      if (initialContent !== content) {
+        console.log(`DocumentEditor: Syncing internal state with new initialContent prop (length: ${initialContent.length}).`);
+        setContent(initialContent);
+      } else {
+        // console.log("DocumentEditor: initialContent prop matches internal state, no sync needed.");
+      }
     }
-    // We only want this effect to run when initialContent changes *after* load.
-    // Do not include `content` in dependency array to prevent loops.
+    // Dependencies: Run when initialContent prop changes or when loading completes.
+    // Do not include `content` here.
   }, [initialContent, isLoaded]);
 
   const initializeWithTemplate = () => {
@@ -114,6 +116,8 @@ const DocumentEditor = ({
   useEffect(() => {
     if (!isLoaded) return;
     
+    // This effect updates the preview and calls onContentChange when the internal
+    // content state changes. It should run *after* the sync effect above completes.
     const htmlContent = content
       .replace(/^# (.*$)/gm, '<h1 class="text-2xl font-bold mb-4 mt-6">$1</h1>')
       .replace(/^## (.*$)/gm, '<h2 class="text-xl font-semibold mb-3 mt-5">$1</h2>')

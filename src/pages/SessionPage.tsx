@@ -15,6 +15,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { SessionDocument } from "@/types/supabase-rpc";
 import { useOpenAIAssistant } from "@/hooks/use-openai-assistant";
 
+// Helper function to get tab from URL
+const getTabFromUrl = (search: string): string => {
+  const params = new URLSearchParams(search);
+  return params.get('tab') || 'info'; // Default to 'info'
+};
+
 const SessionPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const location = useLocation();
@@ -24,7 +30,8 @@ const SessionPage = () => {
   const [documentContent, setDocumentContent] = useState("");
   const [selectedReportId, setSelectedReportId] = useState<string | undefined>();
   const [selectedReportType, setSelectedReportType] = useState<'shortage' | 'discontinuation'>('shortage');
-  const [activeTab, setActiveTab] = useState("info");
+  // Initialize activeTab from URL
+  const [activeTab, setActiveTab] = useState(() => getTabFromUrl(location.search));
   const [isDocumentInitializing, setIsDocumentInitializing] = useState(false);
   const [isDocumentGenerated, setIsDocumentGenerated] = useState(false);
   const [docGenerationError, setDocGenerationError] = useState(false);
@@ -374,9 +381,11 @@ const SessionPage = () => {
     }
   };
 
-  // Handle tab change
+  // Handle tab change - update state and URL
   const handleTabChange = (value: string) => {
     setActiveTab(value);
+    // Update URL query parameter without adding to history
+    navigate(`${location.pathname}?tab=${value}`, { replace: true, state: location.state });
   };
 
   // Add a timeout to prevent getting stuck on loading screen
@@ -425,7 +434,7 @@ const SessionPage = () => {
       
       <Separator />
       
-      <Tabs defaultValue={activeTab} value={activeTab} onValueChange={handleTabChange} className="w-full">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList>
           <TabsTrigger value="info" className="flex items-center">
             <MessageSquare className="h-4 w-4 mr-2" />
