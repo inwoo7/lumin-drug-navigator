@@ -498,6 +498,7 @@ const SessionPage = () => {
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <DocumentEditor 
+                  key={`doc-editor-${sessionId}-${documentContent.length}-${documentContent.substring(0, 10)}`}
                   drugName={drugName} 
                   sessionId={sessionId}
                   onContentChange={handleUpdateDocument} 
