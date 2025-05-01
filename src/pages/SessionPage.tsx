@@ -15,6 +15,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { SessionDocument } from "@/types/supabase-rpc";
 import { useOpenAIAssistant } from "@/hooks/use-openai-assistant";
 
+const SESSION_TAB_STORAGE_KEY = 'lumin_active_session_tab';
+
 const SessionPage = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const location = useLocation();
@@ -24,7 +26,9 @@ const SessionPage = () => {
   const [documentContent, setDocumentContent] = useState("");
   const [selectedReportId, setSelectedReportId] = useState<string | undefined>();
   const [selectedReportType, setSelectedReportType] = useState<'shortage' | 'discontinuation'>('shortage');
-  const [activeTab, setActiveTab] = useState("info");
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem(SESSION_TAB_STORAGE_KEY) || "info";
+  });
   const [isDocumentInitializing, setIsDocumentInitializing] = useState(false);
   const [isDocumentGenerated, setIsDocumentGenerated] = useState(false);
   const [docGenerationError, setDocGenerationError] = useState(false);
@@ -377,6 +381,7 @@ const SessionPage = () => {
   // Handle tab change
   const handleTabChange = (value: string) => {
     setActiveTab(value);
+    localStorage.setItem(SESSION_TAB_STORAGE_KEY, value);
   };
 
   // Add a timeout to prevent getting stuck on loading screen
@@ -498,7 +503,6 @@ const SessionPage = () => {
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <DocumentEditor 
-                  key={`doc-editor-${sessionId}-${documentContent.length}-${documentContent.substring(0, 10)}`}
                   drugName={drugName} 
                   sessionId={sessionId}
                   onContentChange={handleUpdateDocument} 

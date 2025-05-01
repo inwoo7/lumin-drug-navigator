@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { AIConversation } from "@/types/supabase-rpc";
@@ -45,14 +45,6 @@ export const useOpenAIAssistant = ({
   const [hasAttemptedGeneration, setHasAttemptedGeneration] = useState<boolean>(false);
   const [isRestoredSession, setIsRestoredSession] = useState<boolean>(false);
   const [shouldSendRawData, setShouldSendRawData] = useState<boolean>(rawApiData);
-
-  // Ref to store the latest onDocumentUpdate callback
-  const onDocumentUpdateRef = useRef(onDocumentUpdate);
-
-  // Effect to keep the ref updated with the latest callback function
-  useEffect(() => {
-    onDocumentUpdateRef.current = onDocumentUpdate;
-  }, [onDocumentUpdate]);
 
   // Load existing conversation from database
   useEffect(() => {
@@ -572,10 +564,10 @@ Format your response with clear headings and bullet points where appropriate.`;
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content,
-      timestamp: new Date(),
-    };
-
+        content,
+        timestamp: new Date(),
+      };
+      
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
     setError(null);
@@ -617,8 +609,8 @@ Format your response with clear headings and bullet points where appropriate.`;
       };
     } else {
       console.log(`[${assistantType}] Preparing standard chat request.`);
-    }
-
+      }
+      
     try {
       console.log(`[${assistantType}] Calling Supabase function 'openai-assistant'... Payload keys:`, Object.keys(functionPayload));
       const { data, error } = await supabase.functions.invoke("openai-assistant", {
@@ -662,9 +654,9 @@ Format your response with clear headings and bullet points where appropriate.`;
           content: data.message,
           timestamp: new Date(),
         };
-
+        
         let finalMessages = [...messages, userMessage]; // Start with history + user message
-
+      
         // Handle document update response
         if (isDocumentUpdateRequest) {
             let updatedDocContent = null;
@@ -679,13 +671,12 @@ Format your response with clear headings and bullet points where appropriate.`;
             }
 
             if (updatedDocContent !== null) {
-                console.log("[document] Calling onDocumentUpdate via ref.");
-                // Access the callback via the ref's current property
-                if (onDocumentUpdateRef.current) {
-                    onDocumentUpdateRef.current(updatedDocContent);
+                console.log("[document] Calling onDocumentUpdate.");
+                if (onDocumentUpdate) {
+                    onDocumentUpdate(updatedDocContent);
                 } else {
-                    console.warn("[document] onDocumentUpdateRef.current is missing!");
-                }
+                    console.warn("[document] onDocumentUpdate callback is missing!");
+          }
             } else {
                 console.warn("[document] Document update requested, but no updated content received or identified.");
                  // Use the assistant message as is (might be explanation/error)
@@ -778,14 +769,14 @@ Format your response with clear headings and bullet points where appropriate.`;
   const loadMessages = async () => {
       if (!sessionId) return;
       setIsLoading(true);
-      try {
+    try {
         console.log(`[${assistantType}] Manually reloading conversation for session ${sessionId}`);
         const { data: conversations, error } = await supabase
-          .rpc('get_ai_conversation', { 
-            p_session_id: sessionId, 
-            p_assistant_type: assistantType 
-          });
-          
+        .rpc('get_ai_conversation', { 
+          p_session_id: sessionId, 
+          p_assistant_type: assistantType 
+        });
+        
         if (error) throw error;
         
         if (conversations && conversations.length > 0) {
@@ -803,13 +794,13 @@ Format your response with clear headings and bullet points where appropriate.`;
           
           if (messagesArray.length > 0) {
             const storedMessages = messagesArray.map((msg: any) => ({
-              id: msg.id || Date.now().toString(),
-              role: msg.role as "user" | "assistant",
-              content: msg.content,
-              timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
-            }));
+                id: msg.id || Date.now().toString(),
+                role: msg.role as "user" | "assistant",
+                content: msg.content,
+                timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
+              }));
             setMessages(storedMessages);
-            setIsInitialized(true);
+              setIsInitialized(true);
             setIsRestoredSession(true); // Mark as restored
             console.log(`[${assistantType}] Successfully reloaded ${storedMessages.length} messages.`);
           } else {
@@ -823,7 +814,7 @@ Format your response with clear headings and bullet points where appropriate.`;
           setIsInitialized(false);
           setIsRestoredSession(false);
            console.log(`[${assistantType}] No conversation found during reload.`);
-        }
+    }
       } catch (err) {
         console.error(`[${assistantType}] Error reloading conversation:`, err);
         toast.error("Failed to reload conversation.");

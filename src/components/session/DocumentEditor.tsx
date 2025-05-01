@@ -21,142 +21,37 @@ const DocumentEditor = ({
   drugName, 
   sessionId,
   onContentChange,
-  initialContent
+  initialContent = ""
 }: DocumentEditorProps) => {
-  const [content, setContent] = useState("");
+  const [content, setContent] = useState(initialContent);
   const [previewContent, setPreviewContent] = useState("");
   const [activeTab, setActiveTab] = useState("edit");
   const [isSaving, setIsSaving] = useState(false);
-  const [isLoaded, setIsLoaded] = useState(false);
   const [isPdfExporting, setIsPdfExporting] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const loadDocument = async () => {
-      if (isLoaded) return;
+    console.log("DocumentEditor: initialContent prop changed, updating internal state.");
+    setContent(initialContent);
+  }, [initialContent]);
 
-      if (!sessionId) {
-        if (initialContent !== undefined) {
-            setContent(initialContent);
-        } else {
-            initializeWithTemplate();
-        }
-        setIsLoaded(true);
-        return;
-      }
-      
-      try {
-        console.log(`DocumentEditor: Attempting load for session ${sessionId}`);
-        const { data: docs, error } = await supabase
-          .rpc('get_session_document', { 
-            p_session_id: sessionId 
-          }) as { data: SessionDocument[] | null, error: any };
-          
-        if (error) {
-          console.error("DocumentEditor: Error loading document:", error);
-          if (initialContent !== undefined) {
-            setContent(initialContent);
-          } else {
-            initializeWithTemplate();
-          }
-        } else if (docs && docs.length > 0 && docs[0]?.content) {
-          console.log("DocumentEditor: Loaded from database");
-          setContent(docs[0].content);
-        } else if (initialContent !== undefined) {
-          console.log("DocumentEditor: Using initialContent prop");
-          setContent(initialContent);
-        } else {
-          console.log("DocumentEditor: Initializing with template");
-          initializeWithTemplate();
-        }
-        
-        setIsLoaded(true);
-      } catch (err) {
-        console.error("DocumentEditor: Exception loading document:", err);
-        if (initialContent !== undefined) {
-            setContent(initialContent);
-        } else {
-            initializeWithTemplate();
-        }
-        setIsLoaded(true);
-      }
-    };
-    
-    loadDocument();
-  }, [sessionId, initialContent, isLoaded]);
-
-  // Effect to sync internal state with initialContent prop when it changes externally
   useEffect(() => {
-    // --- Add detailed logging ---
-    console.log(`DocumentEditor Prop Sync: isLoaded=${isLoaded}`);
-    console.log(`DocumentEditor Prop Sync: initialContent exists? ${initialContent !== undefined}`);
-    if (initialContent !== undefined) {
-      console.log(`DocumentEditor Prop Sync: initialContent length: ${initialContent.length}`);
-    }
-    console.log(`DocumentEditor Prop Sync: internal content length: ${content.length}`);
-    console.log(`DocumentEditor Prop Sync: initialContent !== content? ${initialContent !== content}`);
-    // --- End detailed logging ---
-
-    // Only update if the prop exists, is different from current state, and component has loaded
-    if (isLoaded && initialContent !== undefined && initialContent !== content) {
-        console.log("DocumentEditor: Syncing internal state with updated initialContent prop.");
-        setContent(initialContent);
-    }
-    // Depend on initialContent to re-run when the prop changes, and isLoaded to ensure we don't run before initial load.
-  }, [initialContent, isLoaded]);
-
-  const initializeWithTemplate = () => {
-    const template = `# ${drugName} Shortage Management Plan
-
-## Overview
-[Enter information about the current shortage situation]
-
-## Therapeutic Alternatives
-[List alternative medications and dosing information]
-
-## Conservation Strategies
-[Document strategies to conserve available supply]
-
-## Patient Prioritization
-[Define criteria for patient prioritization]
-
-## Implementation Plan
-[Outline steps for implementing this plan]
-
-## Communication Strategy
-[Define how to communicate with staff and patients]
-
-## Resources and Contacts
-[List important resources and contact information]
-`;
-    setContent(template);
-    setIsLoaded(true);
-  };
-
-  // Effect to update the preview content whenever the internal content changes
-  useEffect(() => {
-    if (!isLoaded) return;
-    
-    // Simple Markdown to HTML conversion for preview
     const htmlContent = content
       .replace(/^# (.*$)/gm, '<h1 class="text-2xl font-bold mb-4 mt-6">$1</h1>')
       .replace(/^## (.*$)/gm, '<h2 class="text-xl font-semibold mb-3 mt-5">$1</h2>')
       .replace(/^### (.*$)/gm, '<h3 class="text-lg font-semibold mb-2 mt-4">$1</h3>')
-      .replace(/\n\n/g, '<br><br>') // Basic paragraph separation
-      .replace(/\n/g, '<br>') // Basic line breaks
-      .replace(/\[(.+?)\]/g, '<span class="text-gray-500 italic">$1</span>'); // Placeholders
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/^\s*-\s+(.*$)/gm, '<li class="ml-4 list-disc">$1</li>')
+      .replace(/\n/g, '<br>');
       
     setPreviewContent(htmlContent);
     
-    // DO NOT call onContentChange here. This effect is only for the preview.
-    // Parent is notified of user changes via handleContentChange.
-  }, [content, isLoaded]); // Removed onContentChange dependency
+    onContentChange(content);
+  }, [content, onContentChange]);
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newContent = e.target.value;
-    setContent(newContent);
-    // Notify parent ONLY when user types in the textarea
-    onContentChange(newContent);
+    setContent(e.target.value);
   };
 
   const handleSaveDocument = async () => {
@@ -187,12 +82,9 @@ const DocumentEditor = ({
     }
   };
 
-  // Function to export the document as PDF in A4 size
   const handleExportPDF = async () => {
-    // Switch to preview tab if not already there
     if (activeTab !== "preview") {
       setActiveTab("preview");
-      // Wait for the preview to render
       await new Promise(resolve => setTimeout(resolve, 300));
     }
     
@@ -205,45 +97,38 @@ const DocumentEditor = ({
     toast.loading("Generating PDF...", { id: "pdf-export" });
     
     try {
-      // Create a temporary container for the PDF content
       const pdfContainer = document.createElement('div');
       pdfContainer.innerHTML = previewRef.current.innerHTML;
-      pdfContainer.style.width = '595px'; // A4 width in pixels at 72 DPI
+      pdfContainer.style.width = '595px';
       pdfContainer.style.padding = '40px';
       pdfContainer.style.fontFamily = 'Arial, sans-serif';
       document.body.appendChild(pdfContainer);
       
-      // Generate PDF with A4 dimensions
       const pdf = new jsPDF({
         format: 'a4',
         unit: 'pt',
         orientation: 'portrait'
       });
       
-      // Get the content scaled to A4 size
       const canvas = await html2canvas(pdfContainer, {
-        scale: 2, // Higher scale for better quality
+        scale: 2,
         useCORS: true,
         logging: false
       });
       
-      // Remove the temporary container
       document.body.removeChild(pdfContainer);
       
-      // Add the captured content to the PDF
       const imgData = canvas.toDataURL('image/png');
-      const imgWidth = 595; // A4 width in points
+      const imgWidth = 595;
       const imgHeight = canvas.height * imgWidth / canvas.width;
       
-      // Add multiple pages if content is too long
       let heightLeft = imgHeight;
       let position = 0;
-      let pageHeight = 842; // A4 height in points
+      let pageHeight = 842;
       
       pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
       heightLeft -= pageHeight;
       
-      // Add new pages if content is too long
       while (heightLeft >= 0) {
         position = heightLeft - imgHeight;
         pdf.addPage();
@@ -251,7 +136,6 @@ const DocumentEditor = ({
         heightLeft -= pageHeight;
       }
       
-      // Save the PDF with the drug name
       const filename = `${drugName.replace(/\s+/g, '-')}_Shortage_Management_Plan.pdf`;
       pdf.save(filename);
       
