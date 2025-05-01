@@ -85,12 +85,25 @@ const DocumentEditor = ({
     loadDocument();
   }, [sessionId, initialContent, isLoaded]);
 
+  // Effect to sync internal state with initialContent prop when it changes externally
   useEffect(() => {
-    if (initialContent !== undefined && initialContent !== content && isLoaded) {
+    // --- Add detailed logging ---
+    console.log(`DocumentEditor Prop Sync: isLoaded=${isLoaded}`);
+    console.log(`DocumentEditor Prop Sync: initialContent exists? ${initialContent !== undefined}`);
+    if (initialContent !== undefined) {
+      console.log(`DocumentEditor Prop Sync: initialContent length: ${initialContent.length}`);
+    }
+    console.log(`DocumentEditor Prop Sync: internal content length: ${content.length}`);
+    console.log(`DocumentEditor Prop Sync: initialContent !== content? ${initialContent !== content}`);
+    // --- End detailed logging ---
+
+    // Only update if the prop exists, is different from current state, and component has loaded
+    if (isLoaded && initialContent !== undefined && initialContent !== content) {
         console.log("DocumentEditor: Syncing internal state with updated initialContent prop.");
         setContent(initialContent);
     }
-  }, [initialContent, isLoaded]);
+    // Depend on initialContent to re-run when the prop changes, and isLoaded to ensure we don't run before initial load.
+  }, [initialContent, isLoaded, content]); // Temporarily add 'content' to dependency array for logging purposes only
 
   const initializeWithTemplate = () => {
     const template = `# ${drugName} Shortage Management Plan
