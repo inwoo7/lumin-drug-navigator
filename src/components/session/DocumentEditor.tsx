@@ -30,6 +30,7 @@ const DocumentEditor = ({
   const [isLoaded, setIsLoaded] = useState(false);
   const [isPdfExporting, setIsPdfExporting] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
+  const isUpdatingFromProp = useRef(false);
 
   useEffect(() => {
     const loadDocument = async () => {
@@ -69,28 +70,28 @@ const DocumentEditor = ({
     loadDocument();
   }, [sessionId]);
 
-  // Add this effect to log internal state changes
   useEffect(() => {
-      // Avoid logging initial empty state excessively
       if (isLoaded || content !== "") {
-        console.log("DocumentEditor: Internal content state updated. Length:", content?.length);
+        console.log(`DocumentEditor: Internal content state updated. Length: ${content?.length}. From prop update: ${isUpdatingFromProp.current}`);
       }
   }, [content, isLoaded]);
 
-  // Effect to synchronize internal state with initialContent prop changes *after* load
   useEffect(() => {
-    // Log details whenever this effect runs
     console.log(`DocumentEditor Prop Sync Effect: isLoaded=${isLoaded}, propContentDefined=${initialContent !== undefined}, propContentLength=${initialContent?.length}, internalContentLength=${content?.length}`);
     
     if (isLoaded && initialContent !== undefined && initialContent !== content) {
-      console.log("   - Conditions MET. Calling setContent to update internal state.");
+      console.log("   - Conditions MET. Setting flag and calling setContent to update internal state.");
+      isUpdatingFromProp.current = true;
       setContent(initialContent);
     } else {
-       let reason = "";
-       if (!isLoaded) reason = "Component not loaded yet.";
-       else if (initialContent === undefined) reason = "initialContent prop is undefined.";
-       else if (initialContent === content) reason = "initialContent prop is same as internal state.";
-       console.log(`   - Conditions NOT MET. Skipping internal state update. Reason: ${reason}`);
+      let reason = "";
+      if (!isLoaded) reason = "Component not loaded yet.";
+      else if (initialContent === undefined) reason = "initialContent prop is undefined.";
+      else if (initialContent === content) reason = "initialContent prop is same as internal state.";
+      console.log(`   - Conditions NOT MET. Skipping internal state update. Reason: ${reason}`);
+      if (isUpdatingFromProp.current) {
+        isUpdatingFromProp.current = false;
+      }
     }
   }, [initialContent, isLoaded]);
 
@@ -125,6 +126,7 @@ const DocumentEditor = ({
   useEffect(() => {
     if (!isLoaded) return;
     
+    console.log("DocumentEditor: Preview generation effect running.");
     const htmlContent = content
       .replace(/^# (.*$)/gm, '<h1 class="text-2xl font-bold mb-4 mt-6">$1</h1>')
       .replace(/^## (.*$)/gm, '<h2 class="text-xl font-semibold mb-3 mt-5">$1</h2>')
@@ -132,7 +134,14 @@ const DocumentEditor = ({
       .replace(/\n\n/g, '<br><br>')
       .replace(/\[(.+?)\]/g, '<span class="text-gray-500 italic">$1</span>');
     setPreviewContent(htmlContent);
-    onContentChange(content);
+
+    if (!isUpdatingFromProp.current) {
+        console.log("   - Change originated internally (typing). Calling onContentChange.");
+        onContentChange(content);
+    } else {
+        console.log("   - Change originated from prop. Skipping onContentChange call.");
+        isUpdatingFromProp.current = false;
+    }
   }, [content, onContentChange, isLoaded]);
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -167,12 +176,9 @@ const DocumentEditor = ({
     }
   };
 
-  // Function to export the document as PDF in A4 size
   const handleExportPDF = async () => {
-    // Switch to preview tab if not already there
     if (activeTab !== "preview") {
       setActiveTab("preview");
-      // Wait for the preview to render
       await new Promise(resolve => setTimeout(resolve, 300));
     }
     
@@ -185,45 +191,38 @@ const DocumentEditor = ({
     toast.loading("Generating PDF...", { id: "pdf-export" });
     
     try {
-      // Create a temporary container for the PDF content
       const pdfContainer = document.createElement('div');
       pdfContainer.innerHTML = previewRef.current.innerHTML;
-      pdfContainer.style.width = '595px'; // A4 width in pixels at 72 DPI
+      pdfContainer.style.width = '595px';
       pdfContainer.style.padding = '40px';
       pdfContainer.style.fontFamily = 'Arial, sans-serif';
       document.body.appendChild(pdfContainer);
       
-      // Generate PDF with A4 dimensions
       const pdf = new jsPDF({
         format: 'a4',
         unit: 'pt',
         orientation: 'portrait'
       });
       
-      // Get the content scaled to A4 size
       const canvas = await html2canvas(pdfContainer, {
-        scale: 2, // Higher scale for better quality
+        scale: 2,
         useCORS: true,
         logging: false
       });
       
-      // Remove the temporary container
       document.body.removeChild(pdfContainer);
       
-      // Add the captured content to the PDF
       const imgData = canvas.toDataURL('image/png');
-      const imgWidth = 595; // A4 width in points
+      const imgWidth = 595;
       const imgHeight = canvas.height * imgWidth / canvas.width;
       
-      // Add multiple pages if content is too long
       let heightLeft = imgHeight;
       let position = 0;
-      let pageHeight = 842; // A4 height in points
+      let pageHeight = 842;
       
       pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
       heightLeft -= pageHeight;
       
-      // Add new pages if content is too long
       while (heightLeft >= 0) {
         position = heightLeft - imgHeight;
         pdf.addPage();
@@ -231,7 +230,6 @@ const DocumentEditor = ({
         heightLeft -= pageHeight;
       }
       
-      // Save the PDF with the drug name
       const filename = `${drugName.replace(/\s+/g, '-')}_Shortage_Management_Plan.pdf`;
       pdf.save(filename);
       
