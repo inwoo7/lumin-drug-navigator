@@ -23,77 +23,36 @@ const DocumentEditor = ({
   onContentChange,
   initialContent
 }: DocumentEditorProps) => {
-  const [content, setContent] = useState("");
+  const [content, setContent] = useState(initialContent || "");
   const [previewContent, setPreviewContent] = useState("");
   const [activeTab, setActiveTab] = useState("edit");
   const [isSaving, setIsSaving] = useState(false);
-  const [isLoaded, setIsLoaded] = useState(false);
   const [isPdfExporting, setIsPdfExporting] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
   const isUpdatingFromProp = useRef(false);
 
   useEffect(() => {
-    const loadDocument = async () => {
-      if (!sessionId) {
-        initializeWithTemplate();
-        return;
-      }
-      
-      try {
-        const { data: docs, error } = await supabase
-          .rpc('get_session_document', { 
-            p_session_id: sessionId 
-          }) as { data: SessionDocument[] | null, error: any };
-          
-        if (error) {
-          console.error("Error loading document:", error);
-          if (initialContent) {
-            setContent(initialContent);
-          } else {
-            initializeWithTemplate();
-          }
-        } else if (docs && docs.length > 0 && docs[0]?.content) {
-          setContent(docs[0].content);
-        } else if (initialContent) {
-          setContent(initialContent);
-        } else {
-          initializeWithTemplate();
-        }
-        
-        setIsLoaded(true);
-      } catch (err) {
-        console.error("Error loading document:", err);
-        initializeWithTemplate();
-      }
-    };
-    
-    loadDocument();
-  }, [sessionId]);
+      console.log(`DocumentEditor: Internal content state updated. Length: ${content?.length}. From prop update: ${isUpdatingFromProp.current}`);
+  }, [content]);
 
   useEffect(() => {
-      if (isLoaded || content !== "") {
-        console.log(`DocumentEditor: Internal content state updated. Length: ${content?.length}. From prop update: ${isUpdatingFromProp.current}`);
-      }
-  }, [content, isLoaded]);
-
-  useEffect(() => {
-    console.log(`DocumentEditor Prop Sync Effect: isLoaded=${isLoaded}, propContentDefined=${initialContent !== undefined}, propContentLength=${initialContent?.length}, internalContentLength=${content?.length}`);
+    console.log(`DocumentEditor Prop Sync Effect: propContentDefined=${initialContent !== undefined}, propContentLength=${initialContent?.length}, internalContentLength=${content?.length}`);
     
-    if (isLoaded && initialContent !== undefined && initialContent !== content) {
+    if (initialContent !== undefined && initialContent !== content) {
       console.log("   - Conditions MET. Setting flag and calling setContent to update internal state.");
       isUpdatingFromProp.current = true;
       setContent(initialContent);
     } else {
-      let reason = "";
-      if (!isLoaded) reason = "Component not loaded yet.";
-      else if (initialContent === undefined) reason = "initialContent prop is undefined.";
-      else if (initialContent === content) reason = "initialContent prop is same as internal state.";
-      console.log(`   - Conditions NOT MET. Skipping internal state update. Reason: ${reason}`);
-      if (isUpdatingFromProp.current) {
-        isUpdatingFromProp.current = false;
-      }
+       let reason = "";
+       if (initialContent === undefined) reason = "initialContent prop is undefined.";
+       else if (initialContent === content) reason = "initialContent prop is same as internal state.";
+       else reason = "Unknown state - check logic.";
+       console.log(`   - Conditions NOT MET or same. Skipping internal state update. Reason: ${reason}`);
+       if (isUpdatingFromProp.current) {
+          isUpdatingFromProp.current = false;
+       }
     }
-  }, [initialContent, isLoaded]);
+  }, [initialContent]);
 
   const initializeWithTemplate = () => {
     const template = `# ${drugName} Shortage Management Plan
@@ -119,13 +78,17 @@ const DocumentEditor = ({
 ## Resources and Contacts
 [List important resources and contact information]
 `;
-    setContent(template);
-    setIsLoaded(true);
+    if (content === "") {
+        console.log("DocumentEditor: Initializing with template as content is empty.");
+        setContent(template);
+    }
   };
 
   useEffect(() => {
-    if (!isLoaded) return;
-    
+    initializeWithTemplate();
+  }, []);
+
+  useEffect(() => {
     console.log("DocumentEditor: Preview generation effect running.");
     const htmlContent = content
       .replace(/^# (.*$)/gm, '<h1 class="text-2xl font-bold mb-4 mt-6">$1</h1>')
@@ -142,7 +105,7 @@ const DocumentEditor = ({
         console.log("   - Change originated from prop. Skipping onContentChange call.");
         isUpdatingFromProp.current = false;
     }
-  }, [content, onContentChange, isLoaded]);
+  }, [content, onContentChange]);
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value);
