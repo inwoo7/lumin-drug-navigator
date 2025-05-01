@@ -33,6 +33,7 @@ const SessionPage = () => {
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isInfoAssistantReady, setIsInfoAssistantReady] = useState(false);
   const [isDocumentAssistantReady, setIsDocumentAssistantReady] = useState(false);
+  const [editorKey, setEditorKey] = useState(0);
   
   // Use our hook to load session data
   const { session, isLoading: isSessionLoading, isError: isSessionError } = useSession(sessionId);
@@ -64,11 +65,11 @@ const SessionPage = () => {
       console.log("SessionPage: onDocumentUpdate called by hook.");
       console.log(`   - Received content length: ${newContent?.length}`);
       console.log(`   - Current state length before update: ${documentContent?.length}`);
-      // Check if content actually changed before updating state and saving
       if (newContent !== documentContent) {
-          console.log("   - Content is different, calling setDocumentContent and saveDocument.")
-          setDocumentContent(newContent); // This should trigger the useEffect above
+          console.log("   - Content is different, calling setDocumentContent, saveDocument, and incrementing editorKey.")
+          setDocumentContent(newContent); 
           saveDocument(newContent);
+          setEditorKey(prevKey => prevKey + 1);
       } else {
           console.log("   - Received content is the same as current state. Skipping update.");
       }
@@ -512,6 +513,7 @@ const SessionPage = () => {
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <DocumentEditor 
+                  key={editorKey}
                   drugName={drugName} 
                   sessionId={sessionId}
                   onContentChange={handleUpdateDocument} 
