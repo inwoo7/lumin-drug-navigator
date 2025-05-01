@@ -564,10 +564,10 @@ Format your response with clear headings and bullet points where appropriate.`;
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-        content,
-        timestamp: new Date(),
-      };
-      
+      content,
+      timestamp: new Date(),
+    };
+
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
     setError(null);
@@ -609,8 +609,8 @@ Format your response with clear headings and bullet points where appropriate.`;
       };
     } else {
       console.log(`[${assistantType}] Preparing standard chat request.`);
-      }
-      
+    }
+
     try {
       console.log(`[${assistantType}] Calling Supabase function 'openai-assistant'... Payload keys:`, Object.keys(functionPayload));
       const { data, error } = await supabase.functions.invoke("openai-assistant", {
@@ -648,32 +648,28 @@ Format your response with clear headings and bullet points where appropriate.`;
 
       if (data.message) {
         console.log(`[${assistantType}] Received response message.`);
-        
+        const assistantMessage: Message = {
+          id: data.id || Date.now().toString(), // Use ID from response if available
+          role: "assistant",
+          content: data.message,
+          timestamp: new Date(),
+        };
+
         let finalMessages = [...messages, userMessage]; // Start with history + user message
 
         // Handle document update response
         if (isDocumentUpdateRequest) {
             let updatedDocContent = null;
-            // Default chat response to the original message from the backend
-            let chatMessageContent = data.message; 
-
             if (data.updatedDocumentContent) {
-                // Backend explicitly provided the updated document
-                console.log("[document] Received updated document content in dedicated field.");
                 updatedDocContent = data.updatedDocumentContent;
-                // Keep original data.message for chatMessageContent (it might be a description)
             } else if (isDocumentContent(data.message)) {
-                // Fallback: The main message seems to be the full document content
-                 console.warn("[document] No 'updatedDocumentContent' field. Assuming main message is the document.");
+                // Fallback: check if the main message IS the document
+                 console.warn("[document] No 'updatedDocumentContent' field, checking if main message is the document.");
                  updatedDocContent = data.message;
-                 // Since the main message *is* the document, replace chat content with a confirmation
-                 chatMessageContent = "I've updated the document based on your request.";
-            } else {
-                 console.warn("[document] Document update requested, but response doesn't seem to be document content.");
-                 // Keep original data.message for chat, no document update will occur below.
+                 // Adjust chat message to be a confirmation
+                 assistantMessage.content = "I've updated the document based on your request.";
             }
 
-            // Perform the document update if we found content for it
             if (updatedDocContent !== null) {
                 console.log("[document] Calling onDocumentUpdate.");
                 if (onDocumentUpdate) {
@@ -682,26 +678,13 @@ Format your response with clear headings and bullet points where appropriate.`;
                     console.warn("[document] onDocumentUpdate callback is missing!");
                 }
             } else {
-                console.warn("[document] No updated document content identified to apply.");
+                console.warn("[document] Document update requested, but no updated content received or identified.");
+                 // Use the assistant message as is (might be explanation/error)
             }
-
-            // Create the assistant message for the chat history using the determined content
-            const assistantMessage: Message = {
-              id: data.id || Date.now().toString(), 
-              role: "assistant",
-              content: chatMessageContent, // Use the specific content for chat
-              timestamp: new Date(),
-            };
-            finalMessages.push(assistantMessage);
-
+            // Add the (potentially modified) assistant message to chat
+             finalMessages.push(assistantMessage);
         } else {
-           // Standard chat response (not a document update request)
-            const assistantMessage: Message = {
-              id: data.id || Date.now().toString(), 
-              role: "assistant",
-              content: data.message, // Use the direct message content
-              timestamp: new Date(),
-            };
+           // Standard chat response
            finalMessages.push(assistantMessage);
         }
 
@@ -786,14 +769,14 @@ Format your response with clear headings and bullet points where appropriate.`;
   const loadMessages = async () => {
       if (!sessionId) return;
       setIsLoading(true);
-    try {
+      try {
         console.log(`[${assistantType}] Manually reloading conversation for session ${sessionId}`);
         const { data: conversations, error } = await supabase
-        .rpc('get_ai_conversation', { 
-          p_session_id: sessionId, 
-          p_assistant_type: assistantType 
-        });
-        
+          .rpc('get_ai_conversation', { 
+            p_session_id: sessionId, 
+            p_assistant_type: assistantType 
+          });
+          
         if (error) throw error;
         
         if (conversations && conversations.length > 0) {
@@ -811,13 +794,13 @@ Format your response with clear headings and bullet points where appropriate.`;
           
           if (messagesArray.length > 0) {
             const storedMessages = messagesArray.map((msg: any) => ({
-                id: msg.id || Date.now().toString(),
-                role: msg.role as "user" | "assistant",
-                content: msg.content,
-                timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
-              }));
+              id: msg.id || Date.now().toString(),
+              role: msg.role as "user" | "assistant",
+              content: msg.content,
+              timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
+            }));
             setMessages(storedMessages);
-              setIsInitialized(true);
+            setIsInitialized(true);
             setIsRestoredSession(true); // Mark as restored
             console.log(`[${assistantType}] Successfully reloaded ${storedMessages.length} messages.`);
           } else {
@@ -831,7 +814,7 @@ Format your response with clear headings and bullet points where appropriate.`;
           setIsInitialized(false);
           setIsRestoredSession(false);
            console.log(`[${assistantType}] No conversation found during reload.`);
-    }
+        }
       } catch (err) {
         console.error(`[${assistantType}] Error reloading conversation:`, err);
         toast.error("Failed to reload conversation.");

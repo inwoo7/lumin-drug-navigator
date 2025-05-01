@@ -33,7 +33,6 @@ const SessionPage = () => {
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isInfoAssistantReady, setIsInfoAssistantReady] = useState(false);
   const [isDocumentAssistantReady, setIsDocumentAssistantReady] = useState(false);
-  const [editorKey, setEditorKey] = useState(0);
   
   // Use our hook to load session data
   const { session, isLoading: isSessionLoading, isError: isSessionError } = useSession(sessionId);
@@ -45,35 +44,19 @@ const SessionPage = () => {
     sessionId
   );
   
-  // Add this useEffect to log state changes
-  useEffect(() => {
-    // Avoid logging the initial empty state excessively
-    if (documentContent !== "") {
-        console.log("SessionPage: documentContent state updated. New length:", documentContent?.length);
-    }
-  }, [documentContent]);
-  
   // Initialize the Document AI Assistant with error handling
   const documentAssistant = useOpenAIAssistant({
     assistantType: "document",
     sessionId,
     drugShortageData: selectedReportData,
     documentContent,
+    // Only auto-initialize if we have report data AND no document is generated yet AND we haven't tried loading
     autoInitialize: !!selectedReportData && !isDocumentGenerated && !docLoadAttempted && documentContent === "",
     generateDocument: !!selectedReportData && !isDocumentGenerated && documentContent === "",
-    onDocumentUpdate: (newContent) => {
+    onDocumentUpdate: (content) => {
       console.log("SessionPage: onDocumentUpdate called by hook.");
-      console.log(`   - Received content length: ${newContent?.length}`);
-      console.log(`   - Current state length before update: ${documentContent?.length}`);
-      if (newContent !== documentContent) {
-          console.log("   - Content is different, calling setDocumentContent, saveDocument, and incrementing editorKey.")
-          setDocumentContent(newContent); 
-          saveDocument(newContent);
-          setEditorKey(prevKey => prevKey + 1);
-      } else {
-          console.log("   - Received content is the same as current state. Skipping update.");
-      }
-      
+      // Always update the document content when the hook provides it
+      setDocumentContent(content);
       // Mark as generated if not already
       if (!isDocumentGenerated) {
           setIsDocumentGenerated(true);
@@ -83,6 +66,8 @@ const SessionPage = () => {
        if (!isDocumentAssistantReady) {
            setIsDocumentAssistantReady(true);
        }
+       // Save the updated document
+      saveDocument(content);
     },
     onStateChange: (state) => {
       // Mark document assistant ready when initialized
@@ -513,7 +498,6 @@ const SessionPage = () => {
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <DocumentEditor 
-                  key={editorKey}
                   drugName={drugName} 
                   sessionId={sessionId}
                   onContentChange={handleUpdateDocument} 
