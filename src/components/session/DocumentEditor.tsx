@@ -120,21 +120,30 @@ const DocumentEditor = ({
     setIsLoaded(true);
   };
 
+  // Effect to update the preview content whenever the internal content changes
   useEffect(() => {
     if (!isLoaded) return;
     
+    // Simple Markdown to HTML conversion for preview
     const htmlContent = content
       .replace(/^# (.*$)/gm, '<h1 class="text-2xl font-bold mb-4 mt-6">$1</h1>')
       .replace(/^## (.*$)/gm, '<h2 class="text-xl font-semibold mb-3 mt-5">$1</h2>')
       .replace(/^### (.*$)/gm, '<h3 class="text-lg font-semibold mb-2 mt-4">$1</h3>')
-      .replace(/\n\n/g, '<br><br>')
-      .replace(/\[(.+?)\]/g, '<span class="text-gray-500 italic">$1</span>');
+      .replace(/\n\n/g, '<br><br>') // Basic paragraph separation
+      .replace(/\n/g, '<br>') // Basic line breaks
+      .replace(/\[(.+?)\]/g, '<span class="text-gray-500 italic">$1</span>'); // Placeholders
+      
     setPreviewContent(htmlContent);
-    onContentChange(content);
-  }, [content, onContentChange, isLoaded]);
+    
+    // DO NOT call onContentChange here. This effect is only for the preview.
+    // Parent is notified of user changes via handleContentChange.
+  }, [content, isLoaded]); // Removed onContentChange dependency
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setContent(e.target.value);
+    const newContent = e.target.value;
+    setContent(newContent);
+    // Notify parent ONLY when user types in the textarea
+    onContentChange(newContent);
   };
 
   const handleSaveDocument = async () => {
