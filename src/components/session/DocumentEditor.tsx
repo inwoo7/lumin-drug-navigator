@@ -103,7 +103,7 @@ const DocumentEditor = ({
         setContent(initialContent);
     }
     // Depend on initialContent to re-run when the prop changes, and isLoaded to ensure we don't run before initial load.
-  }, [initialContent, isLoaded, content]); // Temporarily add 'content' to dependency array for logging purposes only
+  }, [initialContent, isLoaded]);
 
   const initializeWithTemplate = () => {
     const template = `# ${drugName} Shortage Management Plan
