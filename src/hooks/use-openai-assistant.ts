@@ -648,43 +648,60 @@ Format your response with clear headings and bullet points where appropriate.`;
 
       if (data.message) {
         console.log(`[${assistantType}] Received response message.`);
-        const assistantMessage: Message = {
-          id: data.id || Date.now().toString(), // Use ID from response if available
-          role: "assistant",
-          content: data.message,
-          timestamp: new Date(),
-        };
         
         let finalMessages = [...messages, userMessage]; // Start with history + user message
-      
+
         // Handle document update response
         if (isDocumentUpdateRequest) {
             let updatedDocContent = null;
+            // Default chat response to the original message from the backend
+            let chatMessageContent = data.message; 
+
             if (data.updatedDocumentContent) {
+                // Backend explicitly provided the updated document
+                console.log("[document] Received updated document content in dedicated field.");
                 updatedDocContent = data.updatedDocumentContent;
+                // Keep original data.message for chatMessageContent (it might be a description)
             } else if (isDocumentContent(data.message)) {
-                // Fallback: check if the main message IS the document
-                 console.warn("[document] No 'updatedDocumentContent' field, checking if main message is the document.");
+                // Fallback: The main message seems to be the full document content
+                 console.warn("[document] No 'updatedDocumentContent' field. Assuming main message is the document.");
                  updatedDocContent = data.message;
-                 // Adjust chat message to be a confirmation
-                 assistantMessage.content = "I've updated the document based on your request.";
+                 // Since the main message *is* the document, replace chat content with a confirmation
+                 chatMessageContent = "I've updated the document based on your request.";
+            } else {
+                 console.warn("[document] Document update requested, but response doesn't seem to be document content.");
+                 // Keep original data.message for chat, no document update will occur below.
             }
 
+            // Perform the document update if we found content for it
             if (updatedDocContent !== null) {
                 console.log("[document] Calling onDocumentUpdate.");
                 if (onDocumentUpdate) {
                     onDocumentUpdate(updatedDocContent);
                 } else {
                     console.warn("[document] onDocumentUpdate callback is missing!");
-          }
+                }
             } else {
-                console.warn("[document] Document update requested, but no updated content received or identified.");
-                 // Use the assistant message as is (might be explanation/error)
+                console.warn("[document] No updated document content identified to apply.");
             }
-            // Add the (potentially modified) assistant message to chat
-             finalMessages.push(assistantMessage);
+
+            // Create the assistant message for the chat history using the determined content
+            const assistantMessage: Message = {
+              id: data.id || Date.now().toString(), 
+              role: "assistant",
+              content: chatMessageContent, // Use the specific content for chat
+              timestamp: new Date(),
+            };
+            finalMessages.push(assistantMessage);
+
         } else {
-           // Standard chat response
+           // Standard chat response (not a document update request)
+            const assistantMessage: Message = {
+              id: data.id || Date.now().toString(), 
+              role: "assistant",
+              content: data.message, // Use the direct message content
+              timestamp: new Date(),
+            };
            finalMessages.push(assistantMessage);
         }
 
