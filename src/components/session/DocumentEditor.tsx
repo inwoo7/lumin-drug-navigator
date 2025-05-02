@@ -111,7 +111,6 @@ const DocumentEditor = ({
       pdfContainer.className = 'markdown-preview-pdf';
       pdfContainer.innerHTML = previewRef.current.innerHTML;
       pdfContainer.style.width = '595px';
-      pdfContainer.style.padding = '72px';
       pdfContainer.style.fontFamily = 'Arial, sans-serif';
       pdfContainer.style.fontSize = '10pt';
       document.body.appendChild(pdfContainer);
