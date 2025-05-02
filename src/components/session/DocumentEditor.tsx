@@ -127,7 +127,7 @@ const DocumentEditor = ({
       const contentWidth = pdfWidth - margin * 2;
       const contentHeight = pdfHeight - margin * 2;
       
-      const canvas = await html2canvas(pdfContainer, {
+      const fullCanvas = await html2canvas(pdfContainer, {
         scale: 2,
         useCORS: true,
         logging: false,
@@ -138,25 +138,48 @@ const DocumentEditor = ({
       
       document.body.removeChild(pdfContainer);
       
-      const imgData = canvas.toDataURL('image/png');
-      const imgWidth = contentWidth;
-      const imgHeight = canvas.height * imgWidth / canvas.width;
-      let remainingImageHeight = imgHeight;
-      let pageNum = 1;
-
-      while (remainingImageHeight > 0) {
-        if (pageNum > 1) {
+      const canvasScaleRatio = contentWidth / fullCanvas.width;
+      const scaledCanvasHeight = fullCanvas.height * canvasScaleRatio;
+      const totalPages = Math.ceil(scaledCanvasHeight / contentHeight);
+      
+      for (let i = 1; i <= totalPages; i++) {
+        if (i > 1) {
           pdf.addPage();
         }
-        const imageOffsetY = margin - (imgHeight - remainingImageHeight);
-        
-        pdf.addImage(imgData, 'PNG', margin, imageOffsetY, imgWidth, imgHeight);
 
-        remainingImageHeight -= contentHeight;
-        pageNum++;
+        const sourceY = (fullCanvas.height / totalPages) * (i - 1);
+        let sourceHeight = fullCanvas.height / totalPages;
+        
+        if (i === totalPages) {
+             sourceHeight = fullCanvas.height - sourceY;
+        }
+
+        const sliceCanvas = document.createElement('canvas');
+        sliceCanvas.width = fullCanvas.width;
+        sliceCanvas.height = sourceHeight; 
+        const sliceCtx = sliceCanvas.getContext('2d');
+
+        if (sliceCtx) {
+             sliceCtx.drawImage(
+                 fullCanvas, 
+                 0, sourceY,
+                 fullCanvas.width, sourceHeight,
+                 0, 0,
+                 fullCanvas.width, sourceHeight
+             );
+
+             const sliceImgData = sliceCanvas.toDataURL('image/png');
+
+             const sliceImgScaledHeight = sliceCanvas.height * canvasScaleRatio;
+             pdf.addImage(sliceImgData, 'PNG', margin, margin, contentWidth, sliceImgScaledHeight);
+
+        } else {
+             console.error("Failed to get context for slice canvas");
+             toast.error("Error processing PDF page, context missing.");
+             return;
+        }
       }
       
-      const totalPages = pageNum - 1;
       for (let i = 1; i <= totalPages; i++) {
         pdf.setPage(i);
         
