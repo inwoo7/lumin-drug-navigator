@@ -138,50 +138,59 @@ const DocumentEditor = ({
       
       document.body.removeChild(pdfContainer);
       
-      const canvasScaleRatio = contentWidth / fullCanvas.width;
-      const scaledCanvasHeight = fullCanvas.height * canvasScaleRatio;
-      const totalPages = Math.ceil(scaledCanvasHeight / contentHeight);
-      
-      for (let i = 1; i <= totalPages; i++) {
-        if (i > 1) {
+      const canvasScaleRatio = contentWidth / fullCanvas.width; 
+      const sourceContentHeightPerPage = contentHeight / canvasScaleRatio; // Equivalent content height on the source canvas
+
+      let sourceY = 0; // Current Y position on the source canvas we are slicing from
+      let pageNum = 1;
+
+      while (sourceY < fullCanvas.height) {
+        if (pageNum > 1) {
           pdf.addPage();
         }
 
-        const sourceY = (fullCanvas.height / totalPages) * (i - 1);
-        let sourceHeight = fullCanvas.height / totalPages;
-        
-        if (i === totalPages) {
-             sourceHeight = fullCanvas.height - sourceY;
-        }
+        // Calculate the height of the slice on the source canvas for the current page
+        const currentSourceHeight = Math.min(sourceContentHeightPerPage, fullCanvas.height - sourceY);
 
+        // Create a temporary canvas for the slice
         const sliceCanvas = document.createElement('canvas');
         sliceCanvas.width = fullCanvas.width;
-        sliceCanvas.height = sourceHeight; 
+        sliceCanvas.height = currentSourceHeight;
         const sliceCtx = sliceCanvas.getContext('2d');
 
         if (sliceCtx) {
+             // Draw the calculated slice from the full canvas onto the temporary slice canvas
              sliceCtx.drawImage(
-                 fullCanvas, 
-                 0, sourceY,
-                 fullCanvas.width, sourceHeight,
-                 0, 0,
-                 fullCanvas.width, sourceHeight
+                 fullCanvas,
+                 0, sourceY,                   // Source x, y
+                 fullCanvas.width, currentSourceHeight, // Source width, height
+                 0, 0,                           // Destination x, y on sliceCanvas
+                 fullCanvas.width, currentSourceHeight  // Destination width, height on sliceCanvas
              );
 
+             // Convert the slice canvas to image data
              const sliceImgData = sliceCanvas.toDataURL('image/png');
 
-             const sliceImgScaledHeight = sliceCanvas.height * canvasScaleRatio;
+             // Calculate the scaled height for this specific slice in the PDF
+             const sliceImgScaledHeight = currentSourceHeight * canvasScaleRatio;
+
+             // Add the slice image to the PDF, positioned at the top-left margin
              pdf.addImage(sliceImgData, 'PNG', margin, margin, contentWidth, sliceImgScaledHeight);
 
         } else {
              console.error("Failed to get context for slice canvas");
              toast.error("Error processing PDF page, context missing.");
-             return;
+             break; // Exit loop on error
         }
+
+        // Move to the next slice position on the source canvas
+        sourceY += currentSourceHeight;
+        pageNum++;
       }
       
+      const totalPages = pageNum - 1; // Get total pages based on the loop completion
       for (let i = 1; i <= totalPages; i++) {
-        pdf.setPage(i);
+        pdf.setPage(i); 
         
         pdf.setFontSize(9);
         pdf.setTextColor(100);
