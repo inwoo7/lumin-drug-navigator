@@ -132,7 +132,8 @@ const DocumentEditor = ({
         useCORS: true,
         logging: false,
         width: 595,
-        windowWidth: 595
+        windowWidth: 595,
+        scrollY: -window.scrollY
       });
       
       document.body.removeChild(pdfContainer);
@@ -140,22 +141,22 @@ const DocumentEditor = ({
       const imgData = canvas.toDataURL('image/png');
       const imgWidth = contentWidth;
       const imgHeight = canvas.height * imgWidth / canvas.width;
-      let heightLeft = imgHeight;
-      let position = margin;
-      let currentPage = 1;
-      const totalPages = Math.ceil(imgHeight / contentHeight);
+      let remainingImageHeight = imgHeight;
+      let pageNum = 1;
 
-      pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight);
-      heightLeft -= contentHeight;
+      while (remainingImageHeight > 0) {
+        if (pageNum > 1) {
+          pdf.addPage();
+        }
+        const imageOffsetY = margin - (imgHeight - remainingImageHeight);
+        
+        pdf.addImage(imgData, 'PNG', margin, imageOffsetY, imgWidth, imgHeight);
 
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight + margin;
-        pdf.addPage();
-        currentPage++;
-        pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight);
-        heightLeft -= contentHeight;
+        remainingImageHeight -= contentHeight;
+        pageNum++;
       }
       
+      const totalPages = pageNum - 1;
       for (let i = 1; i <= totalPages; i++) {
         pdf.setPage(i);
         
