@@ -593,24 +593,36 @@ Format your response with clear headings and bullet points where appropriate.`;
       rawData: false, // Raw data only needed for initial generation
     };
 
-    let isDocumentUpdateRequest = false; // Flag to track
+    let isPotentialEditRequest = false; // Flag to track if user INTENDS to edit
 
     // Specific handling for Document Assistant updates
     if (assistantType === 'document' && isInitialized && documentContent !== undefined) {
-      console.log("[document] Preparing document update request.");
-      isDocumentUpdateRequest = true;
-      functionPayload = {
-        ...functionPayload,
-        updateDocument: true, // Flag for backend
-        currentDocumentContent: documentContent, // Current state
-        userRequest: content, // The user's specific request
-        // Override messages potentially - send only user request for clarity?
-        // messages: [{ role: 'user', content: content }] // Let's keep history for now
-      };
+      // Check for keywords indicating an edit request
+      const editKeywords = ['edit', 'change', 'update', 'modify', 'add', 'remove', 'insert', 'delete', 'revise', 'rewrite'];
+      const lowerCaseContent = content.toLowerCase();
+      isPotentialEditRequest = editKeywords.some(keyword => lowerCaseContent.includes(keyword));
+
+      if (isPotentialEditRequest) {
+        console.log("[document] Potential edit request detected based on keywords.");
+        functionPayload = {
+          ...functionPayload,
+          updateDocument: true, // Flag for backend - let it decide if it can/should update
+          currentDocumentContent: documentContent, // Current state
+          userRequest: content, // The user's specific request
+        };
+      } else {
+         console.log("[document] Sending standard query/question to document assistant.");
+         // No need to add specific document update flags if it's likely just a question
+          functionPayload = {
+            ...functionPayload,
+            // Ensure userRequest is still passed for context if needed by backend for Q&A
+            userRequest: content, 
+         };
+      }
     } else {
       console.log(`[${assistantType}] Preparing standard chat request.`);
-      }
-      
+    }
+
     try {
       console.log(`[${assistantType}] Calling Supabase function 'openai-assistant'... Payload keys:`, Object.keys(functionPayload));
       const { data, error } = await supabase.functions.invoke("openai-assistant", {
@@ -651,53 +663,45 @@ Format your response with clear headings and bullet points where appropriate.`;
         const assistantMessage: Message = {
           id: data.id || Date.now().toString(), // Use ID from response if available
           role: "assistant",
-          content: data.message,
+          content: data.message, // Start with the raw response content
           timestamp: new Date(),
         };
         
         let finalMessages = [...messages, userMessage]; // Start with history + user message
-      
-        // Handle document update response
-        if (isDocumentUpdateRequest) {
-            let updatedDocContent = null;
-            let confirmationMessage = "I've updated the document based on your request."; // Default confirmation
 
+        // Handle potential document update response ONLY if it was requested
+        // And check if the response actually contains an updated document
+        let updatedDocContent = null;
+        if (assistantType === 'document' && isPotentialEditRequest) {
             if (data.updatedDocumentContent) {
                 updatedDocContent = data.updatedDocumentContent;
-                // Use default confirmation message
+                console.log("[document] Received updated content in dedicated field.");
             } else if (isDocumentContent(data.message)) {
-                 console.warn("[document] No 'updatedDocumentContent' field, checking if main message is the document.");
+                 console.warn("[document] No 'updatedDocumentContent' field, using main message as document.");
                  updatedDocContent = data.message;
-                 // Main message IS the document, so use default confirmation
-            } else {
-                 // No updated document found, maybe AI explained why? Use its message.
-                 confirmationMessage = data.message; 
-            }
+            } 
+        } // else: it wasn't a document edit request OR no updated doc found
 
-            if (updatedDocContent !== null) {
-                console.log("[document] Calling onDocumentUpdate.");
-                if (onDocumentUpdate) {
-                    onDocumentUpdate(updatedDocContent);
-                } else {
-                    console.warn("[document] onDocumentUpdate callback is missing!");
-                }
-                // Append refresh note ONLY if update was successful
-                confirmationMessage += " Please refresh to view changes.";
-
+        // If an update happened and we got the content...
+        if (updatedDocContent !== null) {
+            console.log("[document] Successfully processed document update.");
+            // Call the update callback with the new content
+            if (onDocumentUpdate) {
+                onDocumentUpdate(updatedDocContent);
             } else {
-                console.warn("[document] Document update requested, but no updated content received or identified.");
-                 // Don't add refresh message if update failed/was just explanation
+                console.warn("[document] onDocumentUpdate callback is missing!");
             }
-            
-            // Update the content of the assistant message object
-            assistantMessage.content = confirmationMessage;
-            
-            // Add the (potentially modified) assistant message to chat
-             finalMessages.push(assistantMessage);
-        } else {
-           // Standard chat response
-           finalMessages.push(assistantMessage);
-        }
+            // Set the chat message to the confirmation + refresh text
+            assistantMessage.content = "I've updated the document based on your request. Please refresh to view changes.";
+        } else if (assistantType === 'document' && isPotentialEditRequest) {
+             // It was an edit request, but we didn't get updated content back.
+             // Use the AI's message directly (might be explanation/error)
+             console.log("[document] Edit requested, but no updated content identified in response. Using raw response.");
+             assistantMessage.content = data.message; 
+        } // else: standard shortage request or document question - use raw response (already set)
+        
+        // Add the final assistant message (either raw response or confirmation) to chat
+        finalMessages.push(assistantMessage);
 
         setMessages(finalMessages);
         // Save conversation after state is updated
