@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import SessionPage from "./pages/SessionPage";
 import HistoryPage from "./pages/HistoryPage";
 import NotFoundPage from "./pages/NotFoundPage";
+import SettingsPage from "./pages/SettingsPage";
 import AppLayout from "./components/layout/AppLayout";
 import EnvironmentDebugger from "./components/debug/EnvironmentDebugger";
 import { useState, useEffect } from "react";
@@ -55,6 +56,7 @@ const InnerApp = () => {
         <Route path="session" element={<SessionPage />} />
         <Route path="session/:sessionId" element={<SessionPage />} />
         <Route path="history" element={<HistoryPage />} />
+        <Route path="settings" element={<SettingsPage />} />
       </Route>
       
       <Route path="*" element={<NotFoundPage />} />
