@@ -174,19 +174,19 @@ export function ChatInterface({
               
             // Return the JSX structure for each message
             return (
+            <div
+              key={message.id}
+              className={`flex ${
+                message.role === "user" ? "justify-end" : "justify-start"
+              }`}
+            >
               <div
-                key={message.id}
-                className={`flex ${
-                  message.role === "user" ? "justify-end" : "justify-start"
+                  className={`max-w-[80%] rounded-lg px-4 py-2 shadow-sm break-words ${
+                  message.role === "user"
+                    ? "bg-lumin-teal text-white"
+                    : "bg-gray-100 text-gray-800"
                 }`}
               >
-                <div
-                  className={`max-w-[80%] rounded-lg px-4 py-2 shadow-sm break-words ${
-                    message.role === "user"
-                      ? "bg-lumin-teal text-white"
-                      : "bg-gray-100 text-gray-800"
-                  }`}
-                >
                   {message.role === "assistant" ? (
                     <div className="prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2">
                       <ReactMarkdown>

@@ -60,18 +60,18 @@ const SessionPage = () => {
     onDocumentUpdate: (content) => {
       console.log("SessionPage: onDocumentUpdate called by hook.");
       // Always update the document content when the hook provides it
-      setDocumentContent(content);
+        setDocumentContent(content);
       // Mark as generated if not already
       if (!isDocumentGenerated) {
-          setIsDocumentGenerated(true);
-          setIsDocumentInitializing(false);
+        setIsDocumentGenerated(true);
+        setIsDocumentInitializing(false);
       }
       // Mark assistant as ready if not already
        if (!isDocumentAssistantReady) {
-           setIsDocumentAssistantReady(true);
+        setIsDocumentAssistantReady(true);
        }
        // Save the updated document
-      saveDocument(content);
+        saveDocument(content);
     },
     onStateChange: (state) => {
       // Mark document assistant ready when initialized

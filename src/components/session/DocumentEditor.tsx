@@ -17,6 +17,18 @@ interface DocumentEditorProps {
   initialContent?: string;
 }
 
+// Placeholder for the actual base64 encoded MaaTRx logo
+const MAATRX_LOGO_BASE64_PLACEHOLDER = "placeholder";
+
+// Define a type for the profile data structure
+interface UserProfileData {
+  hospital_name: string | null;
+  full_name: string | null;
+  title: string | null;
+  extension: string | null;
+  contact_email: string | null;
+}
+
 const DocumentEditor = ({ 
   drugName, 
   sessionId,
@@ -30,6 +42,60 @@ const DocumentEditor = ({
   const [isPdfExporting, setIsPdfExporting] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
   const isProgrammaticChange = useRef(false);
+  const [profileData, setProfileData] = useState<UserProfileData | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+
+  // !!! Placeholder for fetching user profile data !!! REMOVED
+  // Replace this with your actual logic (e.g., from context or a hook)
+  // const userProfile = {
+  //   hospital_name: "Placeholder Hospital Name",
+  //   contact_name: "Angelo Panganiban",
+  //   contact_title: "Drug Information Pharmacist",
+  //   contact_extension: "1560",
+  //   contact_email: "angelomari.panganiban@sinaihealth.ca"
+  // };
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      setProfileLoading(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('hospital_name, full_name, title, extension, contact_email')
+            .eq('id', user.id)
+            .single(); // Fetch a single record
+
+          if (error && error.code !== 'PGRST116') { // PGRST116: 'No rows found' - treat as null profile, not an error
+            throw error;
+          }
+          setProfileData(data);
+        } else {
+          // Handle case where user is not logged in or session is lost
+          console.warn("User not found, cannot fetch profile.");
+          setProfileData(null);
+        }
+      } catch (error) {
+        console.error("Error fetching user profile:", error);
+        toast.error("Failed to load user profile for PDF export.");
+        setProfileData(null); // Ensure profile data is null on error
+      } finally {
+        setProfileLoading(false);
+      }
+    };
+
+    fetchProfile();
+  }, []); // Empty dependency array ensures this runs once on mount
+
+
+  // Fallback values if profile data is missing or loading
+  const hospitalName = profileLoading ? "Loading..." : profileData?.hospital_name || "Hospital Name Not Set";
+  const contactName = profileLoading ? "Loading..." : profileData?.full_name || "Contact Name Not Set";
+  const contactTitle = profileLoading ? "Loading..." : profileData?.title || "Contact Title Not Set";
+  const contactExtension = profileLoading ? "" : profileData?.extension; // Default to empty string if null/undefined
+  const contactEmail = profileLoading ? "" : profileData?.contact_email; // Default to empty string if null/undefined
+  // !!! End Placeholder Update !!!
 
   useEffect(() => {
     if (initialContent !== content) {
@@ -189,23 +255,77 @@ const DocumentEditor = ({
       }
       
       const totalPages = pageNum - 1; // Get total pages based on the loop completion
+      const currentDate = new Date().toLocaleDateString('en-US', { 
+        year: 'numeric', month: 'long', day: 'numeric' 
+      });
+      // Define logo dimensions (adjust as needed)
+      const logoHeight = 20; // Example height in points
+      const logoWidth = 80; // Example width in points (adjust based on logo aspect ratio)
+      
       for (let i = 1; i <= totalPages; i++) {
         pdf.setPage(i); 
         
+        // === Header ===
         pdf.setFontSize(9);
-        pdf.setTextColor(100);
-        pdf.text('Lumin Placeholder Logo', margin, margin - 20);
-        const docTitle = `${drugName} Shortage Plan`;
-        const titleWidth = pdf.getStringUnitWidth(docTitle) * pdf.getFontSize() / pdf.internal.scaleFactor;
-        pdf.text(docTitle, pdfWidth - margin - titleWidth, margin - 20);
+        pdf.setTextColor(100); 
+        
+        // Hospital Name (Left)
+        pdf.text(hospitalName, margin, margin - 20); 
+        
+        // MaaTRx Logo (Right)
+        if (MAATRX_LOGO_BASE64_PLACEHOLDER.startsWith("data:image")) { // Basic check for valid placeholder
+            try {
+                pdf.addImage(
+                    MAATRX_LOGO_BASE64_PLACEHOLDER, 
+                    'PNG', // Assuming PNG, adjust if needed (JPEG, WEBP)
+                    pdfWidth - margin - logoWidth, // x position (top-right corner)
+                    margin - 30, // y position (adjust vertical alignment)
+                    logoWidth, // width on page
+                    logoHeight // height on page
+                );
+            } catch (imgError) {
+                console.error("Error adding logo image:", imgError);
+                pdf.text("[Logo Error]", pdfWidth - margin - 50, margin - 20); // Fallback text
+            }
+        } else {
+             pdf.text("[Logo Missing]", pdfWidth - margin - 50, margin - 20); // Fallback text if placeholder is invalid
+        }
+
+        // Header Line
         pdf.setDrawColor(200);
         pdf.line(margin, margin - 10, pdfWidth - margin, margin - 10);
 
-        pdf.text('Generated by: Placeholder User', margin, pdfHeight - margin + 30);
+        // === Footer ===
+        pdf.setFontSize(8); // Slightly smaller font for footer
+        pdf.setTextColor(100); 
+        
+        // Contact Info Block (Left)
+        let footerY = pdfHeight - margin + 25; // Starting Y for footer block
+        if (contactName && contactTitle) {
+             pdf.text(`${contactName}${contactTitle ? `, ${contactTitle}` : ''}`, margin, footerY); // Handle case where title might be null
+             footerY += 10; // Move down for next line
+        } else if (contactName) { // If only name is available
+             pdf.text(contactName, margin, footerY);
+             footerY += 10;
+        }
+
+        let contactLine = "";
+        if (contactExtension) contactLine += `Ext. ${contactExtension}`;
+        if (contactEmail) contactLine += `${contactExtension ? ' | ' : ''}${contactEmail}`;
+        if (contactLine) {
+            pdf.text(contactLine, margin, footerY);
+            footerY += 10;
+        }
+        pdf.text(currentDate, margin, footerY); // Add date below contact info
+        
+        // Page Number (Right)
         const pageStr = `Page ${i} of ${totalPages}`;
         const pageStrWidth = pdf.getStringUnitWidth(pageStr) * pdf.getFontSize() / pdf.internal.scaleFactor;
-        pdf.text(pageStr, pdfWidth - margin - pageStrWidth, pdfHeight - margin + 30);
-        pdf.line(margin, pdfHeight - margin + 20, pdfWidth - margin, pdfHeight - margin + 20);
+        pdf.text(pageStr, pdfWidth - margin - pageStrWidth, pdfHeight - margin + 30); 
+        
+        // Footer Line - Drawn below all footer text
+        pdf.setDrawColor(200);
+        pdf.line(margin, pdfHeight - margin + 15, pdfWidth - margin, pdfHeight - margin + 15);
       }
       
       const filename = `${drugName.replace(/\s+/g, '-')}_Shortage_Management_Plan.pdf`;
