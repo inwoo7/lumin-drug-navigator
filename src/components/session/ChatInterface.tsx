@@ -87,8 +87,8 @@ export function ChatInterface({
   }, [drugName, sessionType, messages.length, isInitialized, isReportLoading, isLoading, addMessage]);
 
   useEffect(() => {
-    // Scroll to bottom when messages change
-    scrollToBottom();
+    // Scroll to bottom when messages change - REMOVED
+    // scrollToBottom();
   }, [messages]);
 
   const scrollToBottom = () => {

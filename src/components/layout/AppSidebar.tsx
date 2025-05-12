@@ -31,10 +31,6 @@ const AppSidebar = () => {
     path: "/history",
     icon: <HistoryIcon className="mr-2 h-4 w-4" />
   }, {
-    name: "Saved Documents",
-    path: "/documents",
-    icon: <FileIcon className="mr-2 h-4 w-4" />
-  }, {
     name: "Settings",
     path: "/settings",
     icon: <SettingsIcon className="mr-2 h-4 w-4" />

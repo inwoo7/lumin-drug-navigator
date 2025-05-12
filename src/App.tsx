@@ -11,7 +11,6 @@ import HistoryPage from "./pages/HistoryPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import SettingsPage from "./pages/SettingsPage";
 import AppLayout from "./components/layout/AppLayout";
-import EnvironmentDebugger from "./components/debug/EnvironmentDebugger";
 import { useState, useEffect } from "react";
 
 const queryClient = new QueryClient({
@@ -103,7 +102,6 @@ const App = () => {
           <BrowserRouter>
             <InnerApp />
           </BrowserRouter>
-          <EnvironmentDebugger />
         </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>
