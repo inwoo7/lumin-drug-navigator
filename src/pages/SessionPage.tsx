@@ -461,7 +461,8 @@ const SessionPage = () => {
         </TabsContent>
         
         <TabsContent value="document" className="mt-4">
-          {(isDocumentInitializing && !isDocumentGenerated) ? (
+          {/* Show loading indicator if the assistant is loading AND we don't have content yet */}
+          {(documentAssistant.isLoading && !documentContent) ? (
             <div className="flex items-center justify-center min-h-[50vh]">
               <div className="text-center">
                 <div className="w-16 h-16 border-4 border-t-lumin-teal border-r-lumin-teal border-b-gray-200 border-l-gray-200 rounded-full animate-spin mx-auto mb-4"></div>
@@ -469,26 +470,28 @@ const SessionPage = () => {
                 <p className="text-xs text-gray-400 mt-2">This may take a moment as our AI analyzes the shortage data</p>
               </div>
             </div>
-          ) : docGenerationError ? (
+          /* Show error message if there's an error from the hook AND we don't have content */
+          ) : (documentAssistant.error && !documentContent) ? (
             <div className="flex items-center justify-center min-h-[50vh]">
               <div className="text-center">
                 <div className="bg-red-100 p-4 rounded-md mb-4">
                   <p className="text-red-700">There was a problem generating the document.</p>
+                  <p className="text-red-600 text-sm mt-2">{documentAssistant.error}</p>
                   <p className="text-red-600 text-sm mt-2">Please try again later or use the editor to write your own document.</p>
                 </div>
-                <Button 
+                {/* Consider if Try Again is still needed or if it should trigger re-initialization */}
+                {/* <Button 
                   onClick={() => {
-                    setDocGenerationError(false);
-                    setIsDocumentInitializing(true);
-                    setDocLoadAttempted(false);
+                    // Logic to re-trigger generation if applicable
                   }}
                   className="mt-4"
                 >
                   Try Again
-                </Button>
+                </Button> */}
               </div>
             </div>
-          ) : (
+          /* Show the editor and chat if we have document content OR if the assistant is initialized without error */
+          ) : (documentContent || (documentAssistant.isInitialized && !documentAssistant.error)) ? (
             <>
               <Card className="mb-4 border-amber-200 bg-amber-50">
                 <CardContent className="py-3">
@@ -519,6 +522,13 @@ const SessionPage = () => {
                 />
               </div>
             </>
+          ) : ( /* Fallback case - could be initial state before hook initializes */
+             <div className="flex items-center justify-center min-h-[50vh]">
+               <div className="text-center">
+                 <div className="w-16 h-16 border-4 border-t-lumin-teal border-r-lumin-teal border-b-gray-200 border-l-gray-200 rounded-full animate-spin mx-auto mb-4"></div>
+                 <p className="text-gray-500">Initializing document preparation...</p>
+               </div>
+            </div>
           )}
         </TabsContent>
       </Tabs>
