@@ -15,8 +15,9 @@ export async function fetchRxNormDisplayTerms(): Promise<RxNormDisplayTerm[]> {
     throw new Error('Failed to fetch RxNorm display terms');
   }
   const data = await response.json();
+  console.log("RxNorm API data:", data); // Debug log
   // The structure is: { rxnormdata: { displayTermsList: { term: [ ... ] } } }
   const terms: string[] = data?.rxnormdata?.displayTermsList?.term || [];
-  // Use the term as both id and name (RxNorm does not provide a unique id for display terms)
+  console.log("Extracted terms:", terms); // Debug log
   return terms.map((term) => ({ id: term, name: term }));
 } 
