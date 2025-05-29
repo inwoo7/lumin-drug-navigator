@@ -16,8 +16,8 @@ export async function fetchRxNormDisplayTerms(): Promise<RxNormDisplayTerm[]> {
   }
   const data = await response.json();
   console.log("RxNorm API data:", data); // Debug: log the full API response
-  // The structure is: { rxnormdata: { displayTermsList: { term: [ ... ] } } }
-  const terms: string[] = data?.rxnormdata?.displayTermsList?.term || [];
+  // The correct structure is: { displayTermsList: { term: [ ... ] } }
+  const terms: string[] = data?.displayTermsList?.term || [];
   console.log("Extracted terms:", terms.slice(0, 20), `...total: ${terms.length}`); // Debug: log first 20 terms and count
   return terms.map((term) => ({ id: term, name: term }));
 } 
