@@ -35,7 +35,7 @@ const DrugSearch = () => {
       const filteredDrugs = allDrugs.filter((drug) =>
         drug.name.toLowerCase().includes(searchTerm.toLowerCase())
       );
-      console.log("Filtered drugs:", filteredDrugs); // Debug log
+      console.log("Filtered drugs for search '", searchTerm, "':", filteredDrugs.slice(0, 10), `...total: ${filteredDrugs.length}`);
       setDrugs(filteredDrugs);
     } else {
       setDrugs([]);
