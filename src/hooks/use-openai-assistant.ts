@@ -44,10 +44,11 @@ export const useOpenAIAssistant = ({
   const [threadId, _setThreadId] = useState<string | null>(null);
   const threadIdRef = useRef<string | null>(null);
 
-  // Custom setter for threadId to keep ref in sync
   const setThreadId = (newThreadId: string | null) => {
+    console.log(`[THREAD_DEBUG] Attempting to set threadId. Current ref: ${threadIdRef.current}, Current state: ${threadId}, New value: ${newThreadId}`);
     _setThreadId(newThreadId);
     threadIdRef.current = newThreadId;
+    console.log(`[THREAD_DEBUG] After set. New ref: ${threadIdRef.current}, New state (from newThreadId): ${newThreadId}`);
   };
 
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
@@ -74,7 +75,10 @@ export const useOpenAIAssistant = ({
   // Load existing conversation from database
   useEffect(() => {
     const loadConversation = async () => {
-      if (!sessionId) return;
+      if (!sessionId) {
+        console.log(`[THREAD_DEBUG] loadConversation: No session ID, skipping.`);
+        return;
+      }
       
       try {
         console.log(`[${assistantType}] Attempting to load conversation for session ${sessionId}`);
@@ -94,6 +98,7 @@ export const useOpenAIAssistant = ({
         
         if (conversations && conversations.length > 0) {
           const conversationData = conversations[0];
+          console.log(`[THREAD_DEBUG] loadConversation: Found conversation with thread_id: ${conversationData.thread_id}`);
           setThreadId(conversationData.thread_id);
           console.log(`Set thread ID to ${conversationData.thread_id}`);
           
@@ -148,7 +153,8 @@ export const useOpenAIAssistant = ({
             console.log(`[${assistantType}] No messages array in conversation data`);
           }
         } else {
-          console.log(`[${assistantType}] No conversation found for session ${sessionId}`);
+          console.log(`[THREAD_DEBUG] loadConversation: No conversation found for session ${sessionId}, assistant ${assistantType}. Setting threadId to null.`);
+          setThreadId(null); // Explicitly set to null if no conversation found
         }
       } catch (err) {
         console.error(`[${assistantType}] Error loading conversation:`, err);
@@ -223,6 +229,7 @@ Include evidence-based recommendations where possible.
 Format the document in Markdown with clear headings and sections.`;
 
         console.log(`Calling ${assistantConfig.type} assistant function to generate document`);
+        console.log(`[THREAD_DEBUG] generateDocumentFromData: current threadIdRef.current for API call: ${threadIdRef.current}`);
         const { data, error } = await callAssistantAPI({
           assistantType,
           messages: [{ role: "user", content: generationPrompt }],
@@ -253,6 +260,7 @@ Format the document in Markdown with clear headings and sections.`;
         }
         
         if (data?.threadId) {
+          console.log(`[THREAD_DEBUG] generateDocumentFromData: Received threadId from API: ${data.threadId}`);
           setThreadId(data.threadId);
         }
         
@@ -338,6 +346,7 @@ Format the document in Markdown with clear headings and sections.`;
       
       try {
         console.log(`Calling ${assistantConfig.type} assistant function for shortage analysis`);
+        console.log(`[THREAD_DEBUG] initializeInfoAssistant: current threadIdRef.current for API call: ${threadIdRef.current}`);
         const functionPayload = {
           assistantType,
           drugData: shouldSendRawData ? drugShortageData : drugShortageData,
@@ -363,6 +372,7 @@ Format the document in Markdown with clear headings and sections.`;
         console.log("Assistant response received:", data);
         
         if (data?.threadId) {
+          console.log(`[THREAD_DEBUG] initializeInfoAssistant: Received threadId from API: ${data.threadId}`);
           setThreadId(data.threadId);
         }
         
@@ -440,6 +450,7 @@ Format the document in Markdown with clear headings and sections.`;
         timestamp: msg.timestamp.toISOString()
       }));
 
+    console.log(`[THREAD_DEBUG] sendMessage: current threadIdRef.current for API call: ${threadIdRef.current}`);
     let functionPayload: any = {
       assistantType,
       messages: history,
@@ -501,6 +512,7 @@ Format the document in Markdown with clear headings and sections.`;
 
       // Handle thread ID persistence
       if (data?.threadId) {
+        console.log(`[THREAD_DEBUG] sendMessage: Received threadId from API: ${data.threadId}`);
         if (!threadIdRef.current) {
           console.log(`[${assistantType}] Received initial thread ID: ${data.threadId}`);
           setThreadId(data.threadId);

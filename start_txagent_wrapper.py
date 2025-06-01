@@ -78,9 +78,7 @@ def start_service():
             sys.executable, "-m", "uvicorn",
             "txagent_assistant_wrapper:app",
             "--host", "0.0.0.0",
-            "--port", "8001",
-            "--reload",
-            "--reload-dir", "."
+            "--port", "8001"
         ])
         
     except KeyboardInterrupt:
