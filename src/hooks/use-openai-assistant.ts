@@ -63,12 +63,26 @@ export const useOpenAIAssistant = ({
   const callAssistantAPI = async (payload: any) => {
     if (assistantConfig.type === 'txagent' && assistantConfig.client) {
       console.log(`[${assistantType}] Using TxAgent assistant`);
-      return await assistantConfig.client.callAssistant(payload);
+      const result = await assistantConfig.client.callAssistant(payload);
+      
+      // TxAgent returns { data, error } where data is the actual response
+      // The actual thread ID and messages are in result.data, not result.data.data
+      return {
+        data: result.data, // This contains { threadId, messages, content, etc. }
+        error: result.error
+      };
     } else {
       console.log(`[${assistantType}] Using OpenAI assistant (fallback)`);
-      return await supabase.functions.invoke("openai-assistant", {
+      const result = await supabase.functions.invoke("openai-assistant", {
         body: payload
       });
+      
+      // Supabase returns { data: { data: actualData }, error }
+      // We need to extract the inner data for consistency
+      return {
+        data: result.data?.data || result.data,
+        error: result.error
+      };
     }
   };
 
@@ -513,13 +527,22 @@ Format the document in Markdown with clear headings and sections.`;
       // Handle thread ID persistence
       if (data?.threadId) {
         console.log(`[THREAD_DEBUG] sendMessage: Received threadId from API: ${data.threadId}`);
+        console.log(`[THREAD_DEBUG] sendMessage: Current threadIdRef.current: ${threadIdRef.current}`);
+        console.log(`[THREAD_DEBUG] sendMessage: Current threadId state: ${threadId}`);
+        
         if (!threadIdRef.current) {
           console.log(`[${assistantType}] Received initial thread ID: ${data.threadId}`);
           setThreadId(data.threadId);
+          console.log(`[THREAD_DEBUG] sendMessage: After setThreadId, threadIdRef.current: ${threadIdRef.current}`);
         } else if (data.threadId !== threadIdRef.current) {
           console.warn(`[${assistantType}] Backend returned a different thread ID (${data.threadId}) than expected (${threadIdRef.current}). Updating local thread ID.`);
           setThreadId(data.threadId);
+          console.log(`[THREAD_DEBUG] sendMessage: After updating threadId, threadIdRef.current: ${threadIdRef.current}`);
+        } else {
+          console.log(`[THREAD_DEBUG] sendMessage: Thread ID matches, keeping current: ${data.threadId}`);
         }
+      } else {
+        console.warn(`[THREAD_DEBUG] sendMessage: No threadId received in response! Full data:`, data);
       }
       const currentThreadIdForSaving = data?.threadId || threadIdRef.current;
 
