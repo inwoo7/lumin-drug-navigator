@@ -1,29 +1,70 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-node_modules
-dist
-dist-ssr
-*.local
+# Virtual Environments
+.env
+.venv
+txagent-env/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
+# IDE / Editor specific
+.vscode/
+.idea/
 *.suo
-*.ntvs*
+*.ntvs*.*
 *.njsproj
 *.sln
 *.sw?
 
-.env
-.env.local
-.env.development
-.env.production
+# Operating System files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Node / JavaScript
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# Next.js
+.next/
+out/
+
+# Other
+*.log
+local_settings.py
+.DS_Store?
+
+# Supabase (if local development files exist)
+.supabase/
+
+# Test files if not explicitly needed in repo
+*.test.js
+*.spec.js
