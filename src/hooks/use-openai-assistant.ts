@@ -492,10 +492,16 @@ Format the document in Markdown with clear headings and sections.`;
       }
 
       // Handle thread ID persistence
-      if (data?.threadId && !threadId) {
-          console.log(`[${assistantType}] Received new thread ID: ${data.threadId}`);
+      if (data?.threadId) {
+        if (!threadId) {
+          console.log(`[${assistantType}] Received initial thread ID: ${data.threadId}`);
           setThreadId(data.threadId);
+        } else if (data.threadId !== threadId) {
+          console.warn(`[${assistantType}] Backend returned a different thread ID (${data.threadId}) than expected (${threadId}). Updating local thread ID.`);
+          setThreadId(data.threadId);
+        }
       }
+      const currentThreadIdForSaving = data?.threadId || threadId;
 
       // Process response messages
       const responseMessages = data?.messages || [];
@@ -527,12 +533,12 @@ Format the document in Markdown with clear headings and sections.`;
         }
         
         // Save conversation state
-        saveConversation(formattedMessages, data?.threadId || threadId); 
+        saveConversation(formattedMessages, currentThreadIdForSaving); 
 
       } else {
         console.warn(`[${assistantType}] No message content received from assistant.`);
         // Save conversation state even if no message content received
-        saveConversation([...messages, userMessage], threadId || data?.threadId);
+        saveConversation([...messages, userMessage], currentThreadIdForSaving);
       }
     } catch (err: any) {
       console.error(`[${assistantType}] Error sending message:`, err);
