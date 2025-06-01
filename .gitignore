@@ -68,3 +68,12 @@ local_settings.py
 # Test files if not explicitly needed in repo
 *.test.js
 *.spec.js
+
+# Credentials / Secrets
+txagent-key.json
+*.env.local
+*.env*.production
+.env
+secrets/
+*.pem
+*.key
