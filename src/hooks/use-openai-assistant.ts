@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { AIConversation } from "@/types/supabase-rpc";
@@ -41,7 +41,15 @@ export const useOpenAIAssistant = ({
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [threadId, setThreadId] = useState<string | null>(null);
+  const [threadId, _setThreadId] = useState<string | null>(null);
+  const threadIdRef = useRef<string | null>(null);
+
+  // Custom setter for threadId to keep ref in sync
+  const setThreadId = (newThreadId: string | null) => {
+    _setThreadId(newThreadId);
+    threadIdRef.current = newThreadId;
+  };
+
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const [hasAttemptedGeneration, setHasAttemptedGeneration] = useState<boolean>(false);
   const [isRestoredSession, setIsRestoredSession] = useState<boolean>(false);
@@ -222,7 +230,7 @@ Format the document in Markdown with clear headings and sections.`;
           allShortageData,
           documentContent,
           sessionId,
-          threadId,
+          threadId: threadIdRef.current,
           generateDocument: true
         });
         
@@ -335,7 +343,7 @@ Format the document in Markdown with clear headings and sections.`;
           drugData: shouldSendRawData ? drugShortageData : drugShortageData,
           allShortageData: shouldSendRawData ? allShortageData : allShortageData,
           sessionId,
-          threadId,
+          threadId: threadIdRef.current,
           rawApiData: shouldSendRawData
         };
         
@@ -390,7 +398,7 @@ Format the document in Markdown with clear headings and sections.`;
     };
 
     initializeInfoAssistant();
-  }, [assistantType, autoInitialize, drugShortageData, isInitialized, isLoading, isRestoredSession, sessionId, threadId, shouldSendRawData, allShortageData, onStateChange]);
+  }, [assistantType, autoInitialize, drugShortageData, isInitialized, isLoading, isRestoredSession, sessionId, threadIdRef.current, shouldSendRawData, allShortageData, onStateChange]);
 
   const addMessage = (role: "user" | "assistant", content: string) => {
     const newMessage: Message = {
@@ -436,9 +444,9 @@ Format the document in Markdown with clear headings and sections.`;
       assistantType,
       messages: history,
       sessionId,
-      threadId, // Include threadId if available
-      drugData: drugShortageData, // Pass context for the AI
-      allShortageData: allShortageData, // Pass context for the AI
+      threadId: threadIdRef.current,
+      drugData: drugShortageData,
+      allShortageData: allShortageData,
     };
 
     let isPotentialEditRequest = false; // Flag to track if user INTENDS to edit
@@ -493,15 +501,15 @@ Format the document in Markdown with clear headings and sections.`;
 
       // Handle thread ID persistence
       if (data?.threadId) {
-        if (!threadId) {
+        if (!threadIdRef.current) {
           console.log(`[${assistantType}] Received initial thread ID: ${data.threadId}`);
           setThreadId(data.threadId);
-        } else if (data.threadId !== threadId) {
-          console.warn(`[${assistantType}] Backend returned a different thread ID (${data.threadId}) than expected (${threadId}). Updating local thread ID.`);
+        } else if (data.threadId !== threadIdRef.current) {
+          console.warn(`[${assistantType}] Backend returned a different thread ID (${data.threadId}) than expected (${threadIdRef.current}). Updating local thread ID.`);
           setThreadId(data.threadId);
         }
       }
-      const currentThreadIdForSaving = data?.threadId || threadId;
+      const currentThreadIdForSaving = data?.threadId || threadIdRef.current;
 
       // Process response messages
       const responseMessages = data?.messages || [];
@@ -549,7 +557,7 @@ Format the document in Markdown with clear headings and sections.`;
         onStateChange({ isInitialized: true, isLoading: false });
       }
       // Save state even on error
-      saveConversation([...messages, userMessage], threadId);
+      saveConversation([...messages, userMessage], threadIdRef.current);
     }
   };
 
@@ -565,7 +573,7 @@ Format the document in Markdown with clear headings and sections.`;
   // Helper function to save conversation to database
   const saveConversation = async (messagesToSaveExplicit?: Message[], currentThreadId?: string | null) => {
     const currentSessionId = sessionId;
-    const threadToSave = currentThreadId !== undefined ? currentThreadId : threadId;
+    const threadToSave = currentThreadId !== undefined ? currentThreadId : threadIdRef.current;
 
     if (!currentSessionId || !threadToSave) {
       console.warn("Cannot save conversation: Missing sessionId or threadId.", { currentSessionId, threadToSave });
@@ -666,5 +674,5 @@ Format the document in Markdown with clear headings and sections.`;
       }
   };
 
-  return { messages, isLoading, error, sendMessage, addMessage, threadId, isInitialized };
+  return { messages, isLoading, error, sendMessage, addMessage, threadId: threadIdRef.current, isInitialized };
 };
