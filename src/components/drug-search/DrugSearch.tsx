@@ -67,18 +67,18 @@ const DrugSearch = () => {
                 <div className="py-4 text-center text-red-500">{error}</div>
               ) : (
                 <React.Fragment>
-                  <CommandEmpty>No drugs found.</CommandEmpty>
-                  <CommandGroup heading="Drugs">
-                    {drugs.map((drug) => (
-                      <CommandItem
-                        key={drug.id}
-                        value={drug.name}
-                        onSelect={() => handleSelectDrug(drug)}
-                      >
-                        {drug.name}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
+              <CommandEmpty>No drugs found.</CommandEmpty>
+              <CommandGroup heading="Drugs">
+                {drugs.map((drug) => (
+                  <CommandItem
+                    key={drug.id}
+                    value={drug.name}
+                    onSelect={() => handleSelectDrug(drug)}
+                  >
+                    {drug.name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
                 </React.Fragment>
               )}
             </React.Fragment>

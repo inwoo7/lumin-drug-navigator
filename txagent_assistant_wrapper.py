@@ -8,6 +8,10 @@ from datetime import datetime
 import asyncio
 import logging
 
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 # Import TxAgent components
 from transformers import AutoTokenizer
 import sys
@@ -287,6 +291,11 @@ async def openai_assistant_endpoint(request: AssistantRequest):
     """
     Main endpoint that matches the OpenAI assistant interface
     """
+    logger.info(f"Received request for /openai-assistant. Type: {request.assistantType}")
+    logger.info(f"Incoming messages: {request.messages}") # Log the received messages
+    logger.info(f"Drug data: {request.drugData}")
+    logger.info(f"Session ID: {request.sessionId}, Thread ID: {request.threadId}")
+
     try:
         # Generate or retrieve thread ID
         thread_id = request.threadId or str(uuid.uuid4())
