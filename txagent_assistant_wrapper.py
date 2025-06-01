@@ -283,6 +283,88 @@ A shortage of {drug_name} has been identified. This document outlines the manage
         
         return "\n".join(formatted)
 
+    async def handle_follow_up_question(self, question: str, drug_data: dict, conversation_history: list) -> str:
+        """Handle a follow-up question based on the conversation history"""
+        try:
+            drug_name = drug_data.get('brand_name') or drug_data.get('drug_name', 'Unknown Drug')
+            question_lower = question.lower()
+            
+            # Determine what the user is asking about and provide specific answers
+            if any(keyword in question_lower for keyword in ['report id', 'report number', 'id number']):
+                report_id = drug_data.get('report_id') or drug_data.get('id')
+                return f"The report ID for the {drug_name} shortage is: **{report_id}**"
+                
+            elif any(keyword in question_lower for keyword in ['company', 'manufacturer', 'maker']):
+                company = drug_data.get('company_name', 'Unknown Company')
+                return f"The manufacturer of {drug_name} is: **{company}**"
+                
+            elif any(keyword in question_lower for keyword in ['date', 'when', 'start', 'end', 'timeline']):
+                start_date = drug_data.get('actual_start_date') or drug_data.get('start_date')
+                end_date = drug_data.get('estimated_end_date') or drug_data.get('end_date')
+                
+                response = f"**Timeline for {drug_name} shortage:**\n"
+                if start_date:
+                    response += f"- **Started**: {start_date}\n"
+                if end_date:
+                    response += f"- **Expected resolution**: {end_date}\n"
+                else:
+                    response += f"- **Expected resolution**: Not yet determined\n"
+                return response
+                
+            elif any(keyword in question_lower for keyword in ['reason', 'why', 'cause', 'what happened']):
+                reason = drug_data.get('reason_for_shortage', 'Reason not specified')
+                return f"**Reason for {drug_name} shortage:** {reason}"
+                
+            elif any(keyword in question_lower for keyword in ['status', 'current', 'active', 'confirmed']):
+                status = drug_data.get('status', 'Unknown status')
+                return f"**Current status of {drug_name} shortage:** {status}"
+                
+            elif any(keyword in question_lower for keyword in ['dosage', 'form', 'strength', 'dose']):
+                dosage_form = drug_data.get('dosage_form', 'Not specified')
+                strength = drug_data.get('strength', 'Not specified')
+                
+                response = f"**Product details for {drug_name}:**\n"
+                response += f"- **Dosage form**: {dosage_form}\n"
+                if strength and strength.strip():
+                    response += f"- **Strength**: {strength}\n"
+                return response
+                
+            elif any(keyword in question_lower for keyword in ['alternative', 'substitute', 'replacement', 'other option']):
+                # Get alternatives from TxAgent if available
+                if drug_agent:
+                    analysis_result = await drug_agent.analyze_drug_shortage(
+                        drug_name=drug_name,
+                        shortage_data=drug_data
+                    )
+                    alternatives = analysis_result.get('alternatives', [])
+                    if alternatives:
+                        return f"**Therapeutic alternatives for {drug_name}:**\n" + self._format_alternatives(alternatives)
+                
+                return f"**For therapeutic alternatives to {drug_name}:**\nPlease consult with your clinical pharmacist who can recommend appropriate substitutes based on patient-specific factors."
+                
+            elif any(keyword in question_lower for keyword in ['tier', 'priority', 'level']):
+                tier_3 = drug_data.get('tier_3', False)
+                tier_text = "Tier 3 (highest priority)" if tier_3 else "Lower tier priority"
+                return f"**Priority level for {drug_name} shortage:** {tier_text}"
+                
+            else:
+                # General question - provide comprehensive overview
+                return f"""**Here's what I know about the {drug_name} shortage:**
+
+📋 **Report ID**: {drug_data.get('report_id') or drug_data.get('id', 'Not available')}
+🏢 **Manufacturer**: {drug_data.get('company_name', 'Unknown Company')}
+📅 **Start Date**: {drug_data.get('actual_start_date', 'Not specified')}
+🎯 **Expected Resolution**: {drug_data.get('estimated_end_date', 'TBD')}
+⚠️ **Status**: {drug_data.get('status', 'Under review')}
+💊 **Form**: {drug_data.get('dosage_form', 'Not specified')}
+❓ **Reason**: {drug_data.get('reason_for_shortage', 'Not specified')}
+
+*For specific questions, ask me about alternatives, timeline, company details, or other aspects of this shortage.*"""
+                
+        except Exception as e:
+            logging.error(f"Error handling follow-up question: {e}")
+            return f"I encountered an error processing your question about {drug_name}. Please try rephrasing your question or contact support."
+
 # Initialize assistant
 txagent_assistant = TxAgentAssistant()
 
@@ -314,8 +396,40 @@ async def openai_assistant_endpoint(request: AssistantRequest):
         
         # Process based on assistant type
         if request.assistantType == "shortage":
-            # Shortage analysis assistant
-            if request.drugData:
+            # Check if we have new user messages to respond to
+            new_user_messages = [msg for msg in request.messages if msg.role == "user" and msg.content.strip()]
+            
+            if new_user_messages:
+                # This is a follow-up question - process the conversation
+                for msg in new_user_messages:
+                    # Add user message to conversation
+                    user_message = Message(
+                        id=msg.id or str(uuid.uuid4()),
+                        role="user",
+                        content=msg.content,
+                        timestamp=datetime.now().isoformat()
+                    )
+                    existing_messages.append(user_message.dict())
+                    
+                    # Generate contextual response based on the question and drug data
+                    response_content = await txagent_assistant.handle_follow_up_question(
+                        question=msg.content,
+                        drug_data=request.drugData,
+                        conversation_history=existing_messages
+                    )
+                    
+                    assistant_message = Message(
+                        id=str(uuid.uuid4()),
+                        role="assistant", 
+                        content=response_content,
+                        timestamp=datetime.now().isoformat()
+                    )
+                    existing_messages.append(assistant_message.dict())
+                
+                conversations[thread_id]["messages"] = existing_messages
+                
+            elif request.drugData and len(existing_messages) == 0:
+                # This is the initial shortage analysis (no previous messages)
                 analysis = await txagent_assistant.analyze_shortage(
                     drug_data=request.drugData,
                     all_shortage_data=request.allShortageData
@@ -332,32 +446,8 @@ async def openai_assistant_endpoint(request: AssistantRequest):
                 # Add to conversation
                 existing_messages.append(assistant_message.dict())
                 conversations[thread_id]["messages"] = existing_messages
-                
-            else:
-                # Handle user messages
-                for msg in request.messages:
-                    if msg.role == "user":
-                        # Add user message
-                        user_message = Message(
-                            id=msg.id or str(uuid.uuid4()),
-                            role="user",
-                            content=msg.content,
-                            timestamp=datetime.now().isoformat()
-                        )
-                        existing_messages.append(user_message.dict())
-                        
-                        # Generate response (simplified for now)
-                        response_content = f"I understand your question: '{msg.content}'. Let me provide information based on the drug shortage data available."
-                        
-                        assistant_message = Message(
-                            id=str(uuid.uuid4()),
-                            role="assistant",
-                            content=response_content,
-                            timestamp=datetime.now().isoformat()
-                        )
-                        existing_messages.append(assistant_message.dict())
-                
-                conversations[thread_id]["messages"] = existing_messages
+            
+            # If no new messages and conversation exists, just return existing conversation
 
         elif request.assistantType == "document":
             # Document generation assistant
