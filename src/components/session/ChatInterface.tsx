@@ -4,7 +4,9 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription }
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { SendIcon, Loader2, FileEdit, AlertTriangle, Copy, Edit, RefreshCw } from "lucide-react";
-import { useOpenAIAssistant, Message as AIMessage, AssistantType } from "@/hooks/use-openai-assistant";
+import { useOpenAIAssistant, Message as AIMessage, AssistantType, ModelType } from "@/hooks/use-openai-assistant";
+import { ModelSelector } from "./ModelSelector";
+import { MessageBadge } from "./MessageBadge";
 import { useDrugShortageReport, useDrugShortageSearch } from "@/hooks/use-drug-shortages";
 import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -19,6 +21,17 @@ interface ChatInterfaceProps {
   reportType?: 'shortage' | 'discontinuation';
   documentContent?: string;
   onSendToDocument?: (content: string) => void;
+  // Optional: pass in existing assistant to share threads
+  assistant?: {
+    messages: AIMessage[];
+    isLoading: boolean;
+    error: string | null;
+    sendMessage: (message: string) => Promise<void>;
+    isInitialized: boolean;
+    addMessage: (role: "user" | "assistant", content: string) => void;
+    switchModel: (model: ModelType) => Promise<void>;
+    currentModel: ModelType;
+  };
 }
 
 export function ChatInterface({
@@ -29,12 +42,14 @@ export function ChatInterface({
   reportType,
   documentContent,
   onSendToDocument,
+  assistant,
 }: ChatInterfaceProps) {
   const [inputMessage, setInputMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isMessageSending, setIsMessageSending] = useState(false);
   const [documentEditMode, setDocumentEditMode] = useState(false);
+  const [currentModel, setCurrentModel] = useState<ModelType>(sessionType === "document" ? "txagent" : "openai");
   
   // Get drug shortage report data
   const { report, isLoading: isReportLoading } = useDrugShortageReport(
@@ -52,21 +67,32 @@ export function ChatInterface({
   // Map session type to assistant type
   const assistantType: AssistantType = sessionType === "document" ? "document" : "shortage";
   
+  // Use passed assistant if available, otherwise create our own
+  const ownAssistant = useOpenAIAssistant({
+    assistantType,
+    sessionId,
+    drugShortageData: report,
+    allShortageData: shortages,
+    documentContent,
+    autoInitialize: !assistant, // Only auto-initialize if we don't have a passed assistant
+    modelType: currentModel,
+    onModelSwitch: (newModel) => {
+      setCurrentModel(newModel);
+      toast.success(`Switched to ${newModel === 'txagent' ? 'TxAgent' : 'GPT-4o'}`);
+    }
+  });
+  
+  // Use either the passed assistant or our own
   const {
     messages,
     isLoading,
     error,
     sendMessage,
     isInitialized,
-    addMessage
-  } = useOpenAIAssistant({
-    assistantType,
-    sessionId,
-    drugShortageData: report,
-    allShortageData: shortages,
-    documentContent,
-    autoInitialize: true
-  });
+    addMessage,
+    switchModel,
+    currentModel: hookCurrentModel
+  } = assistant || ownAssistant;
   
   // Add initial assistant message when chat first loads if not initialized and no messages
   useEffect(() => {
@@ -157,11 +183,30 @@ export function ChatInterface({
       .catch(() => toast.error("Failed to copy message"));
   };
 
+  // Utility function to check if text looks like a document/markdown content
+  const isDocumentContent = (text: string): boolean => {
+    if (!text || typeof text !== 'string') return false;
+    // Look for multiple markdown headers, typical document length, or structured content
+    const headerCount = (text.match(/^#{1,6}\s/gm) || []).length;
+    const hasStructure = text.includes('##') || text.includes('**') || text.includes('###');
+    const isLongForm = text.length > 300;
+    
+    console.log(`Document content check: headers=${headerCount}, hasStructure=${hasStructure}, length=${text.length}, isLongForm=${isLongForm}`);
+    
+    return headerCount > 1 || (hasStructure && isLongForm) || text.length > 1000;
+  };
+
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="px-4 py-3 border-b">
         <div className="flex justify-between items-center">
           <CardTitle className="text-md">AI Assistant</CardTitle>
+          <ModelSelector 
+            currentModel={hookCurrentModel || currentModel}
+            onModelChange={switchModel}
+            disabled={isLoading || isMessageSending}
+            showLabels={false}
+          />
         </div>
       </CardHeader>
       <CardContent className="flex-1 overflow-y-auto p-4">
@@ -189,11 +234,34 @@ export function ChatInterface({
               >
                   {message.role === "assistant" ? (
                     <div className="prose prose-sm max-w-none prose-p:my-1 prose-headings:my-2">
+                      <div className="flex items-start gap-2 mb-2">
+                        <MessageBadge modelType={message.model || hookCurrentModel || currentModel} />
+                      </div>
                       <ReactMarkdown>
                         {message.content}
                       </ReactMarkdown>
                       {/* Action buttons for assistant messages */}
                       <div className="flex justify-end items-center gap-1 mt-1 opacity-70 hover:opacity-100 transition-opacity">
+                        {/* Apply to Document Button (Document mode only) */}
+                        {sessionType === "document" && isDocumentContent(message.content) && (
+                          <TooltipProvider delayDuration={300}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <IconButton
+                                  onClick={() => handleSendToDoc(message.content)}
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6 p-1 text-green-600 hover:text-green-800"
+                                >
+                                  <FileEdit className="h-3 w-3" />
+                                </IconButton>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                <p>Apply to Document</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                         {/* Refresh Button (Conditional) */}
                         {isUpdateConfirmation && (
                           <TooltipProvider delayDuration={300}>

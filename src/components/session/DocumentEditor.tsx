@@ -177,10 +177,33 @@ const DocumentEditor = ({
     try {
       const pdfContainer = document.createElement('div');
       pdfContainer.className = 'markdown-preview-pdf';
-      pdfContainer.innerHTML = previewRef.current.innerHTML;
+      pdfContainer.style.position = 'relative'; // Needed for watermark positioning
       pdfContainer.style.width = '595px';
       pdfContainer.style.fontFamily = 'Arial, sans-serif';
       pdfContainer.style.fontSize = '10pt';
+      
+      const contentWrapper = document.createElement('div');
+      contentWrapper.innerHTML = previewRef.current.innerHTML;
+      
+      const watermark = document.createElement('div');
+      watermark.innerText = 'Powered by MaaTRx';
+      watermark.style.position = 'absolute';
+      watermark.style.top = '25%';
+      watermark.style.left = '50%';
+      watermark.style.transform = 'translate(-50%, -50%) rotate(-35deg)';
+      watermark.style.fontSize = '46pt';
+      watermark.style.color = 'rgba(128, 128, 128, 0.15)';
+      watermark.style.fontWeight = 'bold';
+      watermark.style.pointerEvents = 'none';
+      watermark.style.zIndex = '1';
+      watermark.style.whiteSpace = 'nowrap';
+      
+      contentWrapper.style.position = 'relative';
+      contentWrapper.style.zIndex = '2';
+
+      pdfContainer.appendChild(contentWrapper);
+      pdfContainer.appendChild(watermark);
+
       document.body.appendChild(pdfContainer);
       
       const pdf = new jsPDF({

@@ -10,7 +10,7 @@ import DocumentEditor from "@/components/session/DocumentEditor";
 import { Link } from "react-router-dom";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { useSession, createSession, useDrugShortageReport } from "@/hooks/use-drug-shortages";
+import { useSession, createSession, useDrugShortageReport, useDrugShortageSearch } from "@/hooks/use-drug-shortages";
 import { supabase } from "@/integrations/supabase/client";
 import { SessionDocument } from "@/types/supabase-rpc";
 import { useOpenAIAssistant } from "@/hooks/use-openai-assistant";
@@ -27,7 +27,16 @@ const SessionPage = () => {
   const [selectedReportId, setSelectedReportId] = useState<string | undefined>();
   const [selectedReportType, setSelectedReportType] = useState<'shortage' | 'discontinuation'>('shortage');
   const [activeTab, setActiveTab] = useState(() => {
-    return localStorage.getItem(SESSION_TAB_STORAGE_KEY) || "info";
+    // For new sessions or when coming from dashboard search, always start with document tab
+    // Only use localStorage for existing sessions that user explicitly switched tabs
+    const fromSearch = location.state?.fromSearch;
+    const storedTab = localStorage.getItem(SESSION_TAB_STORAGE_KEY);
+    
+    if (fromSearch || !storedTab) {
+      return "document"; // Always start with document preparation for new searches
+    }
+    
+    return storedTab;
   });
   const [isDocumentInitializing, setIsDocumentInitializing] = useState(false);
   const [isDocumentGenerated, setIsDocumentGenerated] = useState(false);
@@ -38,8 +47,45 @@ const SessionPage = () => {
   const [isInfoAssistantReady, setIsInfoAssistantReady] = useState(false);
   const [isDocumentAssistantReady, setIsDocumentAssistantReady] = useState(false);
   
+  // Shared thread state for cross-assistant conversation
+  const [sharedThreadId, setSharedThreadId] = useState<string | null>(null);
+  
+  // Separate thread tracking for different models to handle incompatibility
+  const [txAgentThreadId, setTxAgentThreadId] = useState<string | null>(null);
+  const [openAIThreadId, setOpenAIThreadId] = useState<string | null>(null);
+  
+  // Helper function to get the appropriate thread ID for sharing
+  const getSharedThreadId = (newThreadId: string) => {
+    if (newThreadId.startsWith("txagent_")) {
+      setTxAgentThreadId(newThreadId);
+      return newThreadId; // Use TxAgent thread as primary for shared state
+    } else if (newThreadId.startsWith("thread_")) {
+      setOpenAIThreadId(newThreadId);
+      return txAgentThreadId || newThreadId; // Prefer TxAgent thread if exists
+    }
+    return newThreadId;
+  };
+  
   // Use our hook to load session data
   const { session, isLoading: isSessionLoading, isError: isSessionError } = useSession(sessionId);
+  
+  // Get shortage search results to automatically select first report
+  const { shortages } = useDrugShortageSearch(drugName, sessionId);
+  
+  // Automatically select the first report when shortages are loaded
+  useEffect(() => {
+    if (shortages.length > 0 && !selectedReportId) {
+      console.log("Auto-selecting first report:", shortages[0].id, shortages[0].type);
+      setSelectedReportId(shortages[0].id);
+      setSelectedReportType(shortages[0].type);
+      
+      // For new searches with results, always start with document tab
+      if (activeTab !== "document") {
+        setActiveTab("document");
+        localStorage.setItem(SESSION_TAB_STORAGE_KEY, "document");
+      }
+    }
+  }, [shortages, selectedReportId, activeTab]);
   
   // Get drug shortage report data for the selected report
   const { report: selectedReportData, isLoading: isReportLoading } = useDrugShortageReport(
@@ -48,19 +94,28 @@ const SessionPage = () => {
     sessionId
   );
   
-  // Initialize the Document AI Assistant with error handling
+  // Initialize the Document AI Assistant with error handling - using TxAgent for initial generation
   const documentAssistant = useOpenAIAssistant({
     assistantType: "document",
     sessionId,
     drugShortageData: selectedReportData,
     documentContent,
-    // Only auto-initialize if we have report data AND no document is generated yet AND we haven't tried loading
-    autoInitialize: !!selectedReportData && !isDocumentGenerated && !docLoadAttempted && documentContent === "",
-    generateDocument: !!selectedReportData && !isDocumentGenerated && documentContent === "",
+    // ALWAYS auto-initialize and generate document when we have report data and no existing document
+    autoInitialize: !!selectedReportData && documentContent === "",
+    generateDocument: !!selectedReportData && documentContent === "",
+    modelType: "txagent", // Use TxAgent for initial document generation
+    sharedThreadId: sharedThreadId, // Share thread with shortage assistant
+    onThreadIdUpdate: (threadId) => {
+      const newSharedThreadId = getSharedThreadId(threadId);
+      if (!sharedThreadId) {
+        console.log("Document assistant created shared thread:", newSharedThreadId);
+        setSharedThreadId(newSharedThreadId);
+      }
+    },
     onDocumentUpdate: (content) => {
-      console.log("SessionPage: onDocumentUpdate called by hook.");
-      // Always update the document content when the hook provides it
-        setDocumentContent(content);
+      console.log("SessionPage: onDocumentUpdate called by hook with content length:", content.length);
+      // Always update the document content when the hook provides it - this takes priority over loaded content
+      setDocumentContent(content);
       // Mark as generated if not already
       if (!isDocumentGenerated) {
         setIsDocumentGenerated(true);
@@ -72,16 +127,25 @@ const SessionPage = () => {
        }
        // Save the updated document
         saveDocument(content);
+       
+       // Ensure we don't try to load old document content after this
+       setDocLoadAttempted(true);
     },
     onStateChange: (state) => {
       // Mark document assistant ready when initialized
-      if (state.isInitialized) {
+      if (state.isInitialized && !isDocumentAssistantReady) {
         setIsDocumentAssistantReady(true);
+      }
+      
+      // Update loading state properly
+      if (state.isLoading && !isDocumentInitializing) {
+        setIsDocumentInitializing(true);
       }
       
       // If document generation fails or takes too long
       if (!state.isLoading && !state.isInitialized && hasAttemptedDocInit.current) {
         console.log("Document assistant failed to initialize properly");
+        setDocGenerationError(true);
         setIsDocumentAssistantReady(true); // Allow user to proceed anyway
       }
     }
@@ -97,19 +161,53 @@ const SessionPage = () => {
     }
   }, [selectedReportData, isDocumentGenerated, docLoadAttempted, documentContent]);
 
-  // Initialize the Info AI Assistant to track when it's ready
+  // Ensure loading state is set when document should be generating
+  useEffect(() => {
+    if (selectedReportData && !isDocumentGenerated && documentContent === "" && !docGenerationError) {
+      console.log("Setting document initializing to true - conditions met for generation");
+      setIsDocumentInitializing(true);
+    }
+  }, [selectedReportData, isDocumentGenerated, documentContent, docGenerationError]);
+
+  // Debug logging for document generation conditions
+  useEffect(() => {
+    console.log("Document generation debug:");
+    console.log("- selectedReportData:", !!selectedReportData, selectedReportData?.brand_name);
+    console.log("- documentContent length:", documentContent.length);
+    console.log("- autoInitialize condition:", !!selectedReportData && documentContent === "");
+    console.log("- generateDocument condition:", !!selectedReportData && documentContent === "");
+    console.log("- should show loading screen:", (selectedReportData && !isDocumentGenerated && documentContent === ""));
+  }, [selectedReportData, documentContent, isDocumentGenerated]);
+
+  // Initialize the Info AI Assistant to track when it's ready - but don't auto-generate reports
+  // IMPORTANT: Use the same sessionId so both assistants can share the same thread
   const infoAssistant = useOpenAIAssistant({
     assistantType: "shortage",
     sessionId,
     drugShortageData: selectedReportData,
     allShortageData: [],
-    autoInitialize: !!selectedReportData && sessionId !== undefined,
+    autoInitialize: false, // Don't auto-initialize - only initialize when user asks questions
+    sharedThreadId: sharedThreadId, // Share thread with document assistant
+    onThreadIdUpdate: (threadId) => {
+      const newSharedThreadId = getSharedThreadId(threadId);
+      if (!sharedThreadId) {
+        console.log("Shortage assistant created shared thread:", newSharedThreadId);
+        setSharedThreadId(newSharedThreadId);
+      }
+    },
     onStateChange: (state) => {
       if (state.isInitialized) {
         setIsInfoAssistantReady(true);
       }
     }
   });
+
+  // Mark info assistant as ready by default since it doesn't auto-generate
+  useEffect(() => {
+    if (!isInfoAssistantReady) {
+      setIsInfoAssistantReady(true);
+    }
+  }, [isInfoAssistantReady]);
   
   // Load both document and chat conversations before allowing user interaction
   useEffect(() => {
@@ -124,6 +222,7 @@ const SessionPage = () => {
           .rpc('get_session_document', { p_session_id: sessionId });
           
         const hasExistingDocument = existingDoc && existingDoc.length > 0 && existingDoc[0]?.content;
+        console.log("Has existing document:", hasExistingDocument);
         
         // Check if this session already has conversations
         const { data: existingConversations } = await supabase
@@ -135,6 +234,7 @@ const SessionPage = () => {
         const hasExistingConversation = existingConversations && 
                                         existingConversations.length > 0 && 
                                         existingConversations[0]?.messages;
+        console.log("Has existing conversation:", hasExistingConversation);
         
         if (hasExistingDocument && hasExistingConversation) {
           // For existing sessions with data, we can skip the loading screen
@@ -143,19 +243,23 @@ const SessionPage = () => {
           setIsInfoAssistantReady(true);
           setIsDocumentAssistantReady(true);
           
-          // Still load the document
-          await loadDocument();
+          // Only load the document if we don't have fresh content being generated
+          if (!selectedReportData || documentContent) {
+            await loadDocument();
+          }
         } else {
           // For new sessions or sessions without complete data, show loading
+          console.log("New session or incomplete data, preparing for document generation");
           setIsInitialLoading(true);
-          await loadDocument();
           
-          // For sessions without selectedReportData, don't wait for assistants
+          // Only load existing document if we don't have report data to generate new one
           if (!selectedReportData) {
+            await loadDocument();
             setIsInfoAssistantReady(true);
             setIsDocumentAssistantReady(true);
             setIsInitialLoading(false);
           }
+          // If we have selectedReportData, let the assistant generate the document
         }
       } catch (err) {
         console.error("Error preloading session:", err);
@@ -164,17 +268,43 @@ const SessionPage = () => {
     };
     
     preloadSession();
-  }, [sessionId, selectedReportData]);
+  }, [sessionId]);
 
-  // Check when both assistants are ready
+  // Check when assistants are ready - prioritize document generation
   useEffect(() => {
     console.log(`Assistant ready states - Info: ${isInfoAssistantReady}, Document: ${isDocumentAssistantReady}`);
-    // If both assistants are ready or we have errors, show the main UI
-    if ((isInfoAssistantReady && isDocumentAssistantReady) || docGenerationError) {
-      console.log("Both assistants ready or error occurred, showing main UI");
+    console.log(`Document states - Generated: ${isDocumentGenerated}, Initializing: ${isDocumentInitializing}, Content Length: ${documentContent.length}`);
+    
+    // Show loading screen until document is ACTUALLY generated (not just assistant is ready)
+    // Only show main UI when:
+    // 1. Document is fully generated (content exists) AND assistant is ready, OR
+    // 2. There's a generation error, OR  
+    // 3. No report data (nothing to generate)
+    if (selectedReportData) {
+      // We have report data - should generate document
+      if (isDocumentGenerated && documentContent.length > 0) {
+        console.log("Document fully generated, showing main UI");
+        // Add a small delay to prevent flicker
+        setTimeout(() => {
+          setIsInitialLoading(false);
+          setIsDocumentInitializing(false);
+        }, 100);
+      } else if (docGenerationError) {
+        console.log("Document generation error, showing main UI anyway");
+        setIsInitialLoading(false);
+        setIsDocumentInitializing(false);
+      } else {
+        console.log("Still waiting for document generation...");
+        setIsInitialLoading(true);
+        setIsDocumentInitializing(true);
+      }
+    } else {
+      // No report data - no document to generate
+      console.log("No report data to generate document from, showing main UI");
       setIsInitialLoading(false);
+      setIsDocumentInitializing(false);
     }
-  }, [isInfoAssistantReady, isDocumentAssistantReady, docGenerationError]);
+  }, [isDocumentGenerated, docGenerationError, documentContent.length, selectedReportData]);
   
   // Effect to handle document initialization state
   useEffect(() => {
@@ -190,20 +320,7 @@ const SessionPage = () => {
     return () => clearTimeout(timeoutId);
   }, [isDocumentInitializing, isDocumentGenerated, docGenerationError]);
   
-  // Only attempt document generation if we have a report AND we haven't already loaded a document
-  useEffect(() => {
-    if (
-      selectedReportData && 
-      !isDocumentGenerated && 
-      !isDocumentInitializing && 
-      !docGenerationError && 
-      !docLoadAttempted && 
-      documentContent === "" // Only if we don't already have content
-    ) {
-      setIsDocumentInitializing(true);
-      setDocLoadAttempted(true);
-    }
-  }, [selectedReportData, isDocumentGenerated, isDocumentInitializing, docGenerationError, docLoadAttempted, documentContent]);
+
   
   useEffect(() => {
     const initializeSession = async () => {
@@ -399,16 +516,18 @@ const SessionPage = () => {
     return () => clearTimeout(loadingTimeout);
   }, [isInitialLoading]);
 
-  // Show loading screen if we're in initial loading state
-  if (isInitialLoading || isLoading || isSessionLoading) {
+  // Show loading screen when document is being generated for the first time
+  if ((selectedReportData && !isDocumentGenerated && documentContent === "") || 
+      (isDocumentInitializing && !isDocumentGenerated) ||
+      isInitialLoading || isLoading || isSessionLoading) {
     return (
       <div className="flex items-center justify-center min-h-[80vh] bg-gray-50">
         <div className="text-center p-8 rounded-lg shadow-md bg-white">
           <div className="w-24 h-24 border-4 border-t-lumin-teal border-r-lumin-teal border-b-gray-200 border-l-gray-200 rounded-full animate-spin mx-auto mb-6"></div>
-          <h2 className="text-2xl font-semibold text-gray-700 mb-2">Preparing your session</h2>
-          <p className="text-gray-500 mb-4">Our AI is analyzing drug shortage data and preparing your documents</p>
+          <h2 className="text-2xl font-semibold text-gray-700 mb-2">Generating Document</h2>
+          <p className="text-gray-500 mb-4">Advanced Clinical Model is creating a comprehensive shortage management plan for {drugName || "this drug"}</p>
           <div className="bg-blue-50 p-3 rounded-md">
-            <p className="text-sm text-blue-600">This may take 15-30 seconds as we generate comprehensive information</p>
+            <p className="text-sm text-blue-600">This may take 15-30 seconds as our specialized medical AI analyzes the data</p>
           </div>
         </div>
       </div>
@@ -432,13 +551,13 @@ const SessionPage = () => {
       
       <Tabs defaultValue={activeTab} value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList>
-          <TabsTrigger value="info" className="flex items-center">
-            <MessageSquare className="h-4 w-4 mr-2" />
-            Shortage Information
-          </TabsTrigger>
           <TabsTrigger value="document" className="flex items-center">
             <FileText className="h-4 w-4 mr-2" />
             Document Preparation
+          </TabsTrigger>
+          <TabsTrigger value="info" className="flex items-center">
+            <MessageSquare className="h-4 w-4 mr-2" />
+            Shortage Information
           </TabsTrigger>
         </TabsList>
         
@@ -456,78 +575,66 @@ const SessionPage = () => {
               sessionId={sessionId}
               reportId={selectedReportId}
               reportType={selectedReportType}
+              assistant={{
+                messages: infoAssistant.messages,
+                isLoading: infoAssistant.isLoading,
+                error: infoAssistant.error,
+                sendMessage: infoAssistant.sendMessage,
+                isInitialized: infoAssistant.isInitialized,
+                addMessage: infoAssistant.addMessage,
+                switchModel: infoAssistant.switchModel,
+                currentModel: infoAssistant.currentModel
+              }}
             />
           </div>
         </TabsContent>
         
-        <TabsContent value="document" className="mt-4">
-          {/* Show loading indicator if the assistant is loading AND we don't have content yet */}
-          {(documentAssistant.isLoading && !documentContent) ? (
-            <div className="flex items-center justify-center min-h-[50vh]">
-              <div className="text-center">
-                <div className="w-16 h-16 border-4 border-t-lumin-teal border-r-lumin-teal border-b-gray-200 border-l-gray-200 rounded-full animate-spin mx-auto mb-4"></div>
-                <p className="text-gray-500">Generating {drugName} shortage document...</p>
-                <p className="text-xs text-gray-400 mt-2">This may take a moment as our AI analyzes the shortage data</p>
-              </div>
-            </div>
-          /* Show error message if there's an error from the hook AND we don't have content */
-          ) : (documentAssistant.error && !documentContent) ? (
-            <div className="flex items-center justify-center min-h-[50vh]">
-              <div className="text-center">
-                <div className="bg-red-100 p-4 rounded-md mb-4">
-                  <p className="text-red-700">There was a problem generating the document.</p>
-                  <p className="text-red-600 text-sm mt-2">{documentAssistant.error}</p>
-                  <p className="text-red-600 text-sm mt-2">Please try again later or use the editor to write your own document.</p>
+        <TabsContent value="document" className="flex-grow flex flex-col">
+          {isDocumentInitializing && !isDocumentGenerated && !docGenerationError ? (
+            <div className="flex-grow flex items-center justify-center">
+              <div className="text-center space-y-2">
+                <div className="flex justify-center">
+                  <div className="w-8 h-8 border-4 border-gray-200 border-t-primary rounded-full animate-spin"></div>
                 </div>
-                {/* Consider if Try Again is still needed or if it should trigger re-initialization */}
-                {/* <Button 
-                  onClick={() => {
-                    // Logic to re-trigger generation if applicable
-                  }}
-                  className="mt-4"
-                >
-                  Try Again
-                </Button> */}
+                <p className="text-muted-foreground">TxAgent is generating your document...</p>
               </div>
             </div>
-          /* Show the editor and chat if we have document content OR if the assistant is initialized without error */
-          ) : (documentContent || (documentAssistant.isInitialized && !documentAssistant.error)) ? (
-            <>
-              <Card className="mb-4 border-amber-200 bg-amber-50">
-                <CardContent className="py-3">
-                  <div className="flex items-center">
-                    <AlertTriangle className="h-5 w-5 text-amber-500 mr-2" />
-                    <p className="text-sm text-amber-700">
-                      Use the document editor to create a response plan. The AI assistant can help you generate content and answer questions.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <DocumentEditor 
-                  drugName={drugName} 
+          ) : docGenerationError ? (
+            <div className="flex-grow flex items-center justify-center">
+              <div className="text-center text-red-500 space-y-2">
+                <AlertTriangle className="mx-auto h-8 w-8" />
+                <p>Document generation failed.</p>
+                <p className="text-sm text-muted-foreground">You can still ask questions or try regenerating the session.</p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-grow">
+              <div className="relative document-editor-container">
+                <DocumentEditor
+                  drugName={drugName}
                   sessionId={sessionId}
-                  onContentChange={handleUpdateDocument} 
+                  onContentChange={handleUpdateDocument}
                   initialContent={documentContent}
                 />
-                <ChatInterface 
-                  drugName={drugName} 
-                  sessionType="document" 
+              </div>
+              <div className="flex flex-col">
+                <ChatInterface
+                  drugName={drugName}
+                  sessionType="document"
                   sessionId={sessionId}
-                  reportId={selectedReportId}
-                  reportType={selectedReportType}
-                  documentContent={documentContent}
-                  onSendToDocument={handleSendToDocument} 
+                  onSendToDocument={handleSendToDocument}
+                  assistant={{
+                    messages: documentAssistant.messages,
+                    isLoading: documentAssistant.isLoading,
+                    error: documentAssistant.error,
+                    sendMessage: documentAssistant.sendMessage,
+                    isInitialized: documentAssistant.isInitialized,
+                    addMessage: documentAssistant.addMessage,
+                    switchModel: documentAssistant.switchModel,
+                    currentModel: documentAssistant.currentModel,
+                  }}
                 />
               </div>
-            </>
-          ) : ( /* Fallback case - could be initial state before hook initializes */
-             <div className="flex items-center justify-center min-h-[50vh]">
-               <div className="text-center">
-                 <div className="w-16 h-16 border-4 border-t-lumin-teal border-r-lumin-teal border-b-gray-200 border-l-gray-200 rounded-full animate-spin mx-auto mb-4"></div>
-                 <p className="text-gray-500">Initializing document preparation...</p>
-               </div>
             </div>
           )}
         </TabsContent>

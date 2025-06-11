@@ -82,6 +82,7 @@ npm install
 VITE_SUPABASE_URL=your_supabase_url
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 VITE_OPENAI_API_KEY=your_openai_api_key
+VITE_RUNPOD_API_KEY=your_runpod_api_key
 
 # Start development server
 npm run dev

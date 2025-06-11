@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
@@ -37,15 +37,17 @@ const DrugShortageInfo = ({
     isError: isReportError
   } = useDrugShortageReport(selectedReport || undefined, selectedReportType, sessionId);
   
-  // If we have shortages but no selected report, select the first one
-  if (shortages.length > 0 && !selectedReport && !isSearchLoading) {
-    setSelectedReport(shortages[0].id);
-    setSelectedReportType(shortages[0].type);
-    // Notify parent component if callback exists
-    if (onReportSelect) {
-      onReportSelect(shortages[0].id, shortages[0].type);
+  // Effect to select the first report when shortages are loaded
+  useEffect(() => {
+    if (shortages.length > 0 && !selectedReport && !isSearchLoading) {
+      setSelectedReport(shortages[0].id);
+      setSelectedReportType(shortages[0].type);
+      // Notify parent component if callback exists
+      if (onReportSelect) {
+        onReportSelect(shortages[0].id, shortages[0].type);
+      }
     }
-  }
+  }, [shortages, selectedReport, isSearchLoading, onReportSelect]);
   
   // Handle report selection
   const handleReportSelection = (reportId: string, reportType: 'shortage' | 'discontinuation') => {

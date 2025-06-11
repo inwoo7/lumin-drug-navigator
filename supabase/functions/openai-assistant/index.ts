@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
@@ -8,12 +7,17 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Get OpenAI API key from the environment
+// Get API keys from the environment
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+const runpodApiKey = Deno.env.get('RUNPOD_API_KEY');
 
-// Assistant IDs for different purposes
+// OpenAI Assistant IDs for different purposes
 const SHORTAGE_ASSISTANT_ID = "asst_p9adU6tFNefnEmlqMDmuAbeg";
 const DOCUMENT_ASSISTANT_ID = "asst_YD3cbgbhibchd3NltzVtP2VO";
+
+// TxAgent configuration
+const TXAGENT_BASE_URL = "https://api.runpod.ai/v2/os7ld1gn1e2us3/openai/v1";
+const TXAGENT_MODEL = "mims-harvard/TxAgent-T1-Llama-3.1-8B";
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -22,8 +26,39 @@ serve(async (req) => {
   }
   
   try {
-    // Ensure we have the API key
-    if (!openAIApiKey) {
+    // Parse the request first to get model type
+    const requestBody = await req.json();
+    const { 
+      assistantType,
+      modelType = "openai", // Default to OpenAI for backward compatibility
+      messages, 
+      drugData,
+      allShortageData,
+      documentContent,
+      sessionId,
+      threadId,
+      generateDocument = false,
+      isDocumentEdit = false
+    } = requestBody;
+
+    console.log(`Received request for ${assistantType} assistant using ${modelType} model`);
+
+    // Validate API keys based on model type
+    if (modelType === "txagent" && !runpodApiKey) {
+      console.error("RunPod API key not configured");
+      return new Response(
+        JSON.stringify({ 
+          error: "TxAgent API key not configured", 
+          missingApiKey: true 
+        }),
+        { 
+          status: 500, 
+          headers: { ...corsHeaders, "Content-Type": "application/json" } 
+        }
+      );
+    }
+    
+    if (modelType === "openai" && !openAIApiKey) {
       console.error("OpenAI API key not configured");
       return new Response(
         JSON.stringify({ 
@@ -37,78 +72,267 @@ serve(async (req) => {
       );
     }
 
-    // Parse the request
-    const { 
-      assistantType, // "shortage" or "document"
-      messages, 
-      drugData, // The drug shortage report data from Drug Shortages Canada API
-      allShortageData, // All shortage data for comprehensive analysis
-      documentContent, // Current document content for the document assistant
-      sessionId,
-      threadId, // For continuing existing conversations
-      generateDocument = false // Flag to generate document content automatically
-    } = await req.json();
+    // Request already parsed above
 
-    console.log(`Received request for ${assistantType} assistant`);
     console.log(`Thread ID: ${threadId || 'new thread'}`);
     console.log(`Generate Document: ${generateDocument}`);
     
+    // Route to appropriate handler based on model type
+    if (modelType === "txagent") {
+      return await handleTxAgentRequest({
+        assistantType,
+        messages,
+        drugData,
+        allShortageData,
+        documentContent,
+        sessionId,
+        threadId,
+        generateDocument,
+        isDocumentEdit
+      });
+    } else {
+      return await handleOpenAIRequest({
+        assistantType,
+        messages,
+        drugData,
+        allShortageData,
+        documentContent,
+        sessionId,
+        threadId,
+        generateDocument,
+        isDocumentEdit
+      });
+    }
+  } catch (error) {
+    console.error("Error in assistant function:", error);
+    return new Response(
+      JSON.stringify({ error: error.message || "Internal server error" }),
+      { 
+        status: 500, 
+        headers: { ...corsHeaders, "Content-Type": "application/json" } 
+      }
+    );
+  }
+});
+
+// TxAgent handler function
+async function handleTxAgentRequest({
+  assistantType,
+  messages,
+  drugData,
+  allShortageData,
+  documentContent,
+  sessionId,
+  threadId,
+  generateDocument,
+  isDocumentEdit
+}: any) {
+  try {
+    // Build the prompt based on assistant type
+    let prompt = "";
+    
+    if (assistantType === "shortage") {
+      prompt = `You are a clinical decision support LLM trained in advanced therapeutic reasoning, Canadian guidelines, and drug shortage management. `;
+      
+      if (drugData) {
+        prompt += `Analyze this drug shortage data: ${JSON.stringify(drugData, null, 2)}. `;
+      }
+      
+      if (allShortageData && allShortageData.length > 0) {
+        prompt += `Additional shortage context: ${JSON.stringify(allShortageData, null, 2)}. `;
+      }
+      
+      prompt += `Provide detailed analysis of the shortage situation, therapeutic alternatives, conservation strategies, and clinical guidance.`;
+    } else {
+      if (generateDocument && !documentContent) {
+        // This is the prompt for initial document generation.
+        prompt = `You are a clinical decision support LLM. Your task is to generate a drug shortage document for the drug provided in the data below.
+You MUST generate the document using markdown and follow all instructions precisely.
+
+**DOCUMENT STRUCTURE REQUIREMENTS:**
+1.  Start with the main title: "Drug Shortage Clinical Response Template"
+2.  Add the following lines, populating the drug name and date:
+    - **Drug Name:** ${drugData.brand_name || 'N/A'}
+    - **Date:** [Insert current date]
+    - **Prepared by:** TxAgent
+    - **For Use By:** Clinicians, Pharmacists, Formulary Committees, Health System Planners
+3.  Create a level 3 markdown heading titled "1. Current Product Shortage Status". Under it, create a bulleted list for 'Molecule', 'Formulations in Shortage (Canada)', and 'Available Market Alternatives', and populate them with relevant information from the drug data.
+4.  Create a level 3 markdown heading titled "2. Major Indications". Under it, create bulleted lists for 'On-label' and 'Common Off-label' uses. You must research and provide common indications for the specified drug.
+5.  Create a level 3 markdown heading titled "3. Therapeutic Alternatives by Indication". Under it, create a markdown table with the columns "Indication", "Alternatives", and "Notes". Populate this table with at least three common indications and their therapeutic alternatives.
+6.  Create a level 3 markdown heading titled "4. Subpopulations of Concern". Under it, create a markdown table with the columns "Population" and "Considerations". Populate this table for 'Pediatrics', 'Renal impairment', 'Pregnant/lactating', and 'Penicillin Allergy'.
+7.  Create a level 3 markdown heading titled "5. Other Considerations". Under it, create a bulleted list for 'Infection control implications', 'Formulary impacts', 'Communication needs', 'Reconstitution practices', and 'Stockpiling mitigation', and provide a brief point for each.
+
+Begin generating the document now based on this drug data:
+${JSON.stringify(drugData, null, 2)}
+`;
+      } else {
+        // This is the prompt for follow-up edits or questions.
+        prompt = `You are a clinical decision support LLM specializing in drug shortage management documentation.`;
+        if (documentContent) prompt += ` Current document content: ${documentContent}.`;
+        if (isDocumentEdit) {
+          prompt += ` The user wants to edit the document. Their request is in the last message. Update the document based on their request and return the ENTIRE, new version of the document as a single markdown block.`;
+        }
+        prompt += ` Focus on practical clinical information for hospital staff.`;
+      }
+    }
+    
+    // For edit/question prompts, add user message history. For generation, the prompt is self-contained.
+    if (!generateDocument || documentContent) {
+        const userMessages = messages?.filter(msg => msg.role === 'user').map(msg => msg.content).join('\\n') || '';
+        if(userMessages) {
+            prompt += `\\n\\nUser messages:\\n${userMessages}`;
+        }
+    }
+
+    const response = await fetch(`${TXAGENT_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${runpodApiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: TXAGENT_MODEL,
+        messages: [
+          { role: "user", content: prompt }
+        ],
+        max_tokens: 1500,
+        temperature: 0.1
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`TxAgent API error: ${await response.text()}`);
+    }
+    
+    const data = await response.json();
+    const messageContent = data.choices[0].message.content;
+    
+    // Create a mock thread ID for TxAgent (since it doesn't use threads)
+    const txagentThreadId = threadId || `txagent_${Date.now()}`;
+    
+    // Format response messages
+    const allMessages = messages ? [...messages] : [];
+
+    if (generateDocument) {
+      // For initial document generation, the chat message is a simple confirmation
+      allMessages.push({
+        id: `txagent_${Date.now()}`,
+        role: "assistant",
+        content: "I've generated a document based on the drug shortage data. You can now ask me to make changes or explain any part of it.",
+        timestamp: Date.now(),
+        model: 'txagent'
+      });
+    } else {
+      // For follow-up edits, the chat message contains the new content
+      allMessages.push({
+        id: `txagent_${Date.now()}`,
+        role: "assistant",
+        content: messageContent,
+        timestamp: Date.now(),
+        model: 'txagent'
+      });
+    }
+    
+    // Save conversation if sessionId provided
+    if (sessionId) {
+      logToSupabase(sessionId, assistantType, txagentThreadId, allMessages, 'txagent', messageContent, (generateDocument || isDocumentEdit));
+    }
+    
+    return new Response(
+      JSON.stringify({
+        message: messageContent,
+        threadId: txagentThreadId,
+        messages: allMessages,
+        modelType: 'txagent'
+      }),
+      { 
+        headers: { ...corsHeaders, "Content-Type": "application/json" } 
+      }
+    );
+    
+  } catch (error) {
+    console.error("TxAgent error:", error);
+    
+    // Fallback to OpenAI if TxAgent fails
+    console.log("Falling back to OpenAI due to TxAgent error");
+    return await handleOpenAIRequest({
+      assistantType,
+      messages,
+      drugData,
+      allShortageData,
+      documentContent,
+      sessionId,
+      threadId,
+      generateDocument,
+      isDocumentEdit
+    });
+  }
+}
+
+// OpenAI handler function (original logic)
+async function handleOpenAIRequest({
+  assistantType,
+  messages,
+  drugData,
+  allShortageData,
+  documentContent,
+  sessionId,
+  threadId,
+  generateDocument,
+  isDocumentEdit
+}: any) {
+  try {
     // Select the appropriate assistant ID
-    const assistantId = assistantType === "shortage" 
-      ? SHORTAGE_ASSISTANT_ID 
-      : DOCUMENT_ASSISTANT_ID;
+    const assistantId = assistantType === "shortage" ? SHORTAGE_ASSISTANT_ID : DOCUMENT_ASSISTANT_ID;
     
     let thread;
-    
-    // Use existing thread if provided, otherwise create a new one
-    if (threadId) {
-      console.log(`Using existing thread: ${threadId}`);
+
+    // FIX: Validate threadId before using it. OpenAI requires IDs to start with "thread_".
+    if (threadId && threadId.startsWith("thread_")) {
+      console.log(`Using existing OpenAI thread: ${threadId}`);
       thread = { id: threadId };
     } else {
-      // Create a new thread - Updated for v2 API
+      // If threadId exists but is invalid (from TxAgent), log a warning.
+      if (threadId) {
+        console.warn(`Invalid thread_id '${threadId}' for OpenAI. A new thread will be created. Conversation history from TxAgent will not be preserved in this new thread.`);
+      }
+      
+      // Create a new thread for OpenAI since one wasn't provided or was invalid.
       const threadResponse = await fetch("https://api.openai.com/v1/threads", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${openAIApiKey}`,
           "Content-Type": "application/json",
-          "OpenAI-Beta": "assistants=v2" // Updated header for v2 API
+          "OpenAI-Beta": "assistants=v2"
         }
       });
-      
+
       if (!threadResponse.ok) {
         throw new Error(`Failed to create thread: ${await threadResponse.text()}`);
       }
       
       thread = await threadResponse.json();
-      console.log("Created new thread:", thread.id);
+      console.log("Created new OpenAI thread:", thread.id);
       
       // For new threads, add an initial system message based on the assistant type
       let initialPrompt = "";
-      
       if (assistantType === "shortage") {
-        // Provide complete drug shortage data to the LLM
         initialPrompt = `You are analyzing drug shortage data for ${drugData?.brand_name || drugData?.drug_name || "the requested drug"}. `;
-        
         if (drugData) {
           initialPrompt += `This is the specific report data in full raw JSON format: ${JSON.stringify(drugData, null, 2)}. `;
         }
-        
         if (allShortageData && allShortageData.length > 0) {
           initialPrompt += `Here is comprehensive data about all related shortages in full raw JSON format: ${JSON.stringify(allShortageData, null, 2)}. `;
         }
-        
         initialPrompt += `Please provide a detailed analysis of the shortage situation, including therapeutic alternatives, conservation strategies, patient prioritization, and other relevant information.`;
       } else {
         initialPrompt = `You are helping create a concise document about a drug shortage. `;
-        
         if (drugData) {
           initialPrompt += `This is the specific drug data in full raw JSON format: ${JSON.stringify(drugData, null, 2)}. `;
         }
-        
         if (allShortageData && allShortageData.length > 0) {
           initialPrompt += `Here is comprehensive data about all related shortages in full raw JSON format: ${JSON.stringify(allShortageData, null, 2)}. `;
         }
-        
         if (documentContent) {
           initialPrompt += `Here is the current document content that you should use as a base: "${documentContent}". `;
         } else if (generateDocument) {
@@ -116,10 +340,8 @@ serve(async (req) => {
         } else {
           initialPrompt += `Please generate an initial draft for a hospital staff communication document. `;
         }
-        
         initialPrompt += `Focus on: expected shortage resolution date, therapeutic alternatives, conservation strategies, and other key information hospital staff need to know.`;
       }
-      
       // Add the initial prompt as a user message
       await fetch(`https://api.openai.com/v1/threads/${thread.id}/messages`, {
         method: "POST",
@@ -137,7 +359,7 @@ serve(async (req) => {
     
     // Add any additional user messages to the thread
     if (messages && messages.length > 0) {
-      for (const msg of messages) {
+      for (const msg of messages){
         if (msg.role === "user") {
           await fetch(`https://api.openai.com/v1/threads/${thread.id}/messages`, {
             method: "POST",
@@ -154,7 +376,6 @@ serve(async (req) => {
         }
       }
     }
-    
     // Run the assistant with appropriate instructions
     let instructions = "";
     if (assistantType === "shortage") {
@@ -167,18 +388,14 @@ serve(async (req) => {
       if (documentContent) {
         instructions += `The current document is: "${documentContent}". `;
       }
-      
       if (generateDocument && !documentContent) {
         instructions += `Generate a complete initial shortage management plan document in markdown format with clear sections. `;
-      }
-      
-      if (messages && messages.length > 0 && messages[0].content.includes("remove") || messages[0].content.includes("edit") || messages[0].content.includes("update")) {
-        instructions += `The user is asking you to modify the document content directly. Make the requested changes and return the complete updated document (not just the changes).`;
+      } else if (isDocumentEdit) {
+        instructions += `The user is asking to modify the document. Please make the requested changes and return the *entire* updated document as a single markdown block. Do not just describe the changes.`;
       } else {
-        instructions += `Focus on key information that hospital staff need to know, such as shortage duration, alternatives, and conservation strategies.`;
+        instructions += `The user is asking a question about the document. Provide a concise answer and do not return the whole document.`;
       }
     }
-    
     // Run the assistant - Updated for v2 API
     const runResponse = await fetch(`https://api.openai.com/v1/threads/${thread.id}/runs`, {
       method: "POST",
@@ -192,114 +409,85 @@ serve(async (req) => {
         instructions
       })
     });
-    
     if (!runResponse.ok) {
       throw new Error(`Failed to run assistant: ${await runResponse.text()}`);
     }
-    
     const run = await runResponse.json();
     console.log("Started run:", run.id);
-    
     // Poll for completion - Updated for v2 API
     let runStatus = run.status;
     let attempts = 0;
     const maxAttempts = 30; // Maximum number of polling attempts
-    
-    while (runStatus !== "completed" && attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second between polls
-      
-      const statusResponse = await fetch(
-        `https://api.openai.com/v1/threads/${thread.id}/runs/${run.id}`,
-        {
-          headers: {
-            "Authorization": `Bearer ${openAIApiKey}`,
-            "OpenAI-Beta": "assistants=v2"
-          }
-        }
-      );
-      
-      if (!statusResponse.ok) {
-        throw new Error(`Failed to check run status: ${await statusResponse.text()}`);
-      }
-      
-      const statusData = await statusResponse.json();
-      runStatus = statusData.status;
-      attempts++;
-      
-      if (runStatus === "failed") {
-        throw new Error("Assistant run failed");
-      }
-    }
-    
-    if (runStatus !== "completed") {
-      throw new Error("Assistant run timed out");
-    }
-    
-    // Get all messages from the thread - Updated for v2 API
-    const messagesResponse = await fetch(
-      `https://api.openai.com/v1/threads/${thread.id}/messages`,
-      {
+    while(runStatus !== "completed" && attempts < maxAttempts){
+      await new Promise((resolve)=>setTimeout(resolve, 1000)); // Wait 1 second between polls
+      const statusResponse = await fetch(`https://api.openai.com/v1/threads/${thread.id}/runs/${run.id}`, {
         headers: {
           "Authorization": `Bearer ${openAIApiKey}`,
           "OpenAI-Beta": "assistants=v2"
         }
+      });
+      if (!statusResponse.ok) {
+        throw new Error(`Failed to check run status: ${await statusResponse.text()}`);
       }
-    );
-    
+      const statusData = await statusResponse.json();
+      runStatus = statusData.status;
+      attempts++;
+      if (runStatus === "failed") {
+        throw new Error("Assistant run failed");
+      }
+    }
+    if (runStatus !== "completed") {
+      throw new Error("Assistant run timed out");
+    }
+    // Get all messages from the thread - Updated for v2 API
+    const messagesResponse = await fetch(`https://api.openai.com/v1/threads/${thread.id}/messages`, {
+      headers: {
+        "Authorization": `Bearer ${openAIApiKey}`,
+        "OpenAI-Beta": "assistants=v2"
+      }
+    });
     if (!messagesResponse.ok) {
       throw new Error(`Failed to get messages: ${await messagesResponse.text()}`);
     }
-    
     const messagesData = await messagesResponse.json();
-    
     // Check if we have messages
     if (!messagesData.data || messagesData.data.length === 0) {
       throw new Error("No messages returned from OpenAI");
     }
-    
     const lastMessage = messagesData.data[0];
-    
     // Check if last message has content
     if (!lastMessage.content || lastMessage.content.length === 0 || !lastMessage.content[0].text) {
       throw new Error("No content in last message");
     }
-    
-    const allMessages = messagesData.data.map(msg => ({
-      id: msg.id,
-      role: msg.role,
-      content: msg.content[0].text.value,
-      timestamp: msg.created_at
-    }));
-    
+    const allMessages = messagesData.data.map((msg)=>({
+        id: msg.id,
+        role: msg.role,
+        content: msg.content[0].text.value,
+        timestamp: msg.created_at
+      }));
     // If we have a session ID, log this interaction in the database
     if (sessionId) {
       try {
         const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.38.4");
-        
         const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
         const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-        
         if (supabaseUrl && supabaseServiceKey) {
           const supabase = createClient(supabaseUrl, supabaseServiceKey);
-          
           // Store the interaction in ai_interactions table
-          await supabase
-            .rpc('save_ai_conversation', {
-              p_session_id: sessionId,
-              p_assistant_type: assistantType,
-              p_thread_id: thread.id,
-              p_messages: allMessages
-            });
-          
+          await supabase.rpc('save_ai_conversation', {
+            p_session_id: sessionId,
+            p_assistant_type: assistantType,
+            p_thread_id: thread.id,
+            p_messages: allMessages,
+            p_model_type: 'openai'
+          });
           // If this is the document assistant and we have generated a document or the user is editing it, update the document content
-          if (assistantType === "document" && (generateDocument || (messages && messages.length > 0))) {
-            await supabase
-              .rpc('save_session_document', {
-                p_session_id: sessionId,
-                p_content: lastMessage.content[0].text.value
-              });
+          if (assistantType === "document" && (generateDocument || messages && messages.length > 0)) {
+            await supabase.rpc('save_session_document', {
+              p_session_id: sessionId,
+              p_content: lastMessage.content[0].text.value
+            });
           }
-          
           console.log(`Logged AI interaction for session ${sessionId}`);
         }
       } catch (dbError) {
@@ -307,27 +495,57 @@ serve(async (req) => {
         console.error("Error logging AI interaction:", dbError);
       }
     }
-    
     // Return the response
-    return new Response(
-      JSON.stringify({
-        message: lastMessage.content[0].text.value,
-        threadId: thread.id,
-        messages: allMessages
-      }),
-      { 
-        headers: { ...corsHeaders, "Content-Type": "application/json" } 
+    return new Response(JSON.stringify({
+      message: lastMessage.content[0].text.value,
+      threadId: thread.id,
+      messages: allMessages,
+      modelType: 'openai' // FIX: Ensure modelType is returned
+    }), {
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json"
       }
-    );
-    
+    });
   } catch (error) {
-    console.error("Error in openai-assistant function:", error);
-    return new Response(
-      JSON.stringify({ error: error.message || "Internal server error" }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, "Content-Type": "application/json" } 
+    console.error("Error in OpenAI handler:", error);
+    return new Response(JSON.stringify({
+      error: error.message || "Internal server error"
+    }), {
+      status: 500,
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json"
       }
-    );
+    });
   }
-});
+}
+
+async function logToSupabase(sessionId, assistantType, threadId, messages, modelType, content, shouldSaveDocument) {
+  try {
+    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.38.4");
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+
+    if (supabaseUrl && supabaseServiceKey) {
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+      await supabase.rpc('save_ai_conversation', {
+        p_session_id: sessionId,
+        p_assistant_type: assistantType,
+        p_thread_id: threadId,
+        p_messages: messages,
+        p_model_type: modelType
+      });
+
+      if (assistantType === "document" && shouldSaveDocument) {
+        await supabase.rpc('save_session_document', {
+          p_session_id: sessionId,
+          p_content: content
+        });
+      }
+      console.log(`Logged AI interaction for session ${sessionId}`);
+    }
+  } catch (dbError) {
+    console.error("Error logging AI interaction:", dbError);
+  }
+}

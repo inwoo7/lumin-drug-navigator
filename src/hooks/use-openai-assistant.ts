@@ -8,9 +8,11 @@ export type Message = {
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  model?: ModelType;
 };
 
 export type AssistantType = "shortage" | "document";
+export type ModelType = "openai" | "txagent";
 
 type UseOpenAIAssistantProps = {
   assistantType: AssistantType;
@@ -23,6 +25,10 @@ type UseOpenAIAssistantProps = {
   generateDocument?: boolean; // Flag to generate document on initialization
   rawApiData?: boolean; // Flag to indicate we should send the raw API data
   onStateChange?: (state: { isInitialized: boolean; isLoading: boolean }) => void; // Callback for state changes
+  modelType?: ModelType; // Which AI model to use (default: "openai")
+  onModelSwitch?: (newModel: ModelType) => void; // Callback when model is switched
+  sharedThreadId?: string | null; // Optional shared thread ID for multi-assistant conversations
+  onThreadIdUpdate?: (threadId: string) => void; // Callback when thread ID is created/updated
 };
 
 export const useOpenAIAssistant = ({
@@ -36,6 +42,10 @@ export const useOpenAIAssistant = ({
   generateDocument = false,
   rawApiData = false,
   onStateChange,
+  modelType = "openai",
+  onModelSwitch,
+  sharedThreadId,
+  onThreadIdUpdate,
 }: UseOpenAIAssistantProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -45,6 +55,13 @@ export const useOpenAIAssistant = ({
   const [hasAttemptedGeneration, setHasAttemptedGeneration] = useState<boolean>(false);
   const [isRestoredSession, setIsRestoredSession] = useState<boolean>(false);
   const [shouldSendRawData, setShouldSendRawData] = useState<boolean>(rawApiData);
+  const [currentModel, setCurrentModel] = useState<ModelType>(modelType);
+  const [allConversations, setAllConversations] = useState<Record<ModelType, Message[]>>({
+    openai: [],
+    txagent: []
+  });
+
+  const watermark = "\n\n*Powered by MaaTRx*";
 
   // Load existing conversation from database
   useEffect(() => {
@@ -55,10 +72,11 @@ export const useOpenAIAssistant = ({
         console.log(`[${assistantType}] Attempting to load conversation for session ${sessionId}`);
         
         const { data: conversations, error } = await supabase
-          .rpc('get_ai_conversation', { 
+          .rpc('get_ai_conversation' as any, { 
             p_session_id: sessionId, 
-            p_assistant_type: assistantType 
-          });
+            p_assistant_type: assistantType,
+            p_model_type: currentModel
+          } as any);
           
         if (error) {
             console.error("Error loading conversation:", error);
@@ -153,6 +171,7 @@ export const useOpenAIAssistant = ({
       ) {
         if (assistantType === "document" && !isInitialized && !isLoading && !isRestoredSession) {
           console.log("Document assistant not generating document but marking as initialized");
+          console.log(`Debug - generateDocument: ${generateDocument}, drugShortageData: ${!!drugShortageData}, hasAttemptedGeneration: ${hasAttemptedGeneration}, sessionId: ${!!sessionId}, documentContent length: ${documentContent?.length || 0}`);
           setIsInitialized(true);
           if (onStateChange) {
             onStateChange({ isInitialized: true, isLoading: false });
@@ -162,6 +181,7 @@ export const useOpenAIAssistant = ({
       }
       
       console.log("[document] Starting document generation from drug data (not a restored session).");
+      console.log(`Debug - All conditions met for generation. drugShortageData brand_name: ${drugShortageData.brand_name}`);
       setHasAttemptedGeneration(true);
       setIsLoading(true);
       
@@ -201,6 +221,7 @@ Format the document in Markdown with clear headings and sections.`;
         const { data, error } = await supabase.functions.invoke("openai-assistant", {
           body: {
             assistantType: "document",
+            modelType: currentModel,
             messages: [{
               role: "user",
               content: generationPrompt
@@ -238,7 +259,7 @@ Format the document in Markdown with clear headings and sections.`;
         // Update document via callback
         if (onDocumentUpdate && data.message) {
           console.log("Calling onDocumentUpdate with document content");
-          onDocumentUpdate(data.message);
+          onDocumentUpdate(data.message + watermark);
         } else {
           console.warn("Document update callback missing or no message content received");
         }
@@ -372,185 +393,66 @@ Format the document in Markdown with clear headings and sections.`;
         }
       }
       
-      // Only proceed with generation if:
-      // 1. We're dealing with the shortage assistant type
-      // 2. We haven't attempted generation yet
-      // 3. We have drug data available
-      // 4. We're not already initialized
-      // 5. We're not currently loading
-      if (
-        assistantType === "shortage" && 
-        !hasAttemptedGeneration && 
-        drugShortageData && 
-        !isInitialized && 
-        !isLoading
-      ) {
-        console.log("[shortage] Initializing shortage assistant with comprehensive analysis (not a restored session).");
-        setHasAttemptedGeneration(true);
-        setIsLoading(true);
-        
-        if (onStateChange) {
-          onStateChange({ isInitialized: false, isLoading: true });
-        }
-        
-        try {
-          // Add a placeholder message showing we're analyzing data (to be displayed to user)
-          const initialMessage = {
-            id: Date.now().toString(),
-            role: "assistant" as const,
-            content: "I'm analyzing the drug shortage data and preparing a comprehensive response...",
-            timestamp: new Date(),
-          };
-          
-          // Set the placeholder message
-          setMessages([initialMessage]);
-          
-          // DO NOT add the initialPrompt itself to the message history.
-          const initialPrompt = `Generate a comprehensive analysis of the ${drugShortageData?.brand_name || drugShortageData?.drug_name || "drug"} shortage.
-Include the following information:
-1. Background of the shortage
-2. Current status
-3. Expected duration
-4. Therapeutic alternatives with specific dosing recommendations
-5. Conservation strategies
-6. Patient prioritization guidance if needed
-7. Implementation plan for managing the shortage
-
-Format your response with clear headings and bullet points where appropriate.`;
-          
-          console.log("[shortage] Calling Supabase function with initial prompt...");
-          const { data, error } = await supabase.functions.invoke("openai-assistant", {
-            body: {
-              assistantType: "shortage",
-              // Send the PROMPT to the backend, not the chat history
-              messages: [{
-                role: "user",
-                content: initialPrompt
-              }],
-              drugData: drugShortageData,
-              allShortageData: allShortageData || [],
-              sessionId,
-              createThreadOnly: false, // Generate a comprehensive first response
-              rawData: shouldSendRawData // Only send raw data for initial thread creation
-            },
-          });
-          
-          if (error) {
-            console.error("Error creating assistant thread:", error);
-            toast.error("Error initializing assistant. Using offline mode.");
-            // Replace placeholder with an error message
-            setMessages([{ 
-              id: Date.now().toString(), 
-              role: 'assistant', 
-              content: 'Error initializing assistant. Could not connect to AI service.', 
-              timestamp: new Date() 
-            }]);
-            setIsInitialized(true); // Still mark as initialized so user can interact
-            if (onStateChange) {
-              onStateChange({ isInitialized: true, isLoading: false });
-            }
-          } else if (data.error) {
-            console.error("Error from assistant function:", data.error);
-            toast.error(`Assistant Error: ${data.error}`);
-             setMessages([{ 
-              id: Date.now().toString(), 
-              role: 'assistant', 
-              content: `Assistant Error: ${data.error}`, 
-              timestamp: new Date() 
-            }]);
-            setIsInitialized(true);
-            if (onStateChange) {
-              onStateChange({ isInitialized: true, isLoading: false });
-            }
-          } else {
-            // Set thread ID for future messages
-            if (data.threadId) {
-              setThreadId(data.threadId);
-               console.log(`[shortage] Thread ID set: ${data.threadId}`);
-            }
-            
-            // Add the initial comprehensive analysis to the chat
-            if (data.message) {
-                console.log("[shortage] Received initial analysis response.");
-              const responseMessage: Message = {
-                id: Date.now().toString(),
-                role: "assistant" as const,
-                content: data.message, // This is the actual analysis, not the prompt
-                timestamp: new Date(),
-              };
-              
-              // Replace the placeholder with the actual response
-              setMessages([responseMessage]);
-              
-              // Save this conversation to the database with the response message and threadId
-              if (data.threadId) {
-                 saveConversation([responseMessage], data.threadId);
-              } else {
-                 console.warn("[shortage] No threadId received after initialization, cannot save initial conversation.");
-              }
-            } else {
-                 console.warn("[shortage] Initialization successful, but no message content received.");
-                 // Replace placeholder with a confirmation/info message
-                 setMessages([{ 
-                   id: Date.now().toString(), 
-                   role: 'assistant', 
-                   content: 'Assistant initialized. Ask me anything about the shortage.', 
-                   timestamp: new Date() 
-                 }]);
-            }
-            
-            // After initialization, we don't need to send raw data anymore
-            setShouldSendRawData(false);
-            // Set initialized to true only AFTER we've processed the response
-            setIsInitialized(true);
-            if (onStateChange) {
-              onStateChange({ isInitialized: true, isLoading: false });
-            }
-          }
-        } catch (err: any) {
-          console.error("Error initializing info assistant:", err);
-          toast.error("Error connecting to assistant service. Using offline mode.");
-          
-          setIsInitialized(true); // Still mark as initialized to allow user interaction
-          if (onStateChange) {
-            onStateChange({ isInitialized: true, isLoading: false });
-          }
-        } finally {
-          setIsLoading(false);
-        }
-      } else if (assistantType === "shortage" && !isInitialized && !isLoading) {
-        // For shortage assistants that don't need generation but aren't initialized (and not restored)
+      // For shortage assistant, DO NOT auto-generate anything
+      // Just mark as ready for user interaction
+      if (assistantType === "shortage" && !isInitialized) {
         console.log("Shortage assistant has no data to generate but marking as initialized");
         setIsInitialized(true);
         if (onStateChange) {
           onStateChange({ isInitialized: true, isLoading: false });
         }
+        return;
       }
     };
     
-    // Only run this for the shortage information assistant
     if (assistantType === "shortage") {
       initializeInfoAssistant();
     }
   }, [
     assistantType,
-    drugShortageData,
+    sessionId, 
+    isRestoredSession, 
     isInitialized,
-    isLoading,
     hasAttemptedGeneration,
-    allShortageData,
-    sessionId,
-    isRestoredSession,
-    shouldSendRawData,
     onStateChange
   ]);
 
-  const addMessage = (role: "user" | "assistant", content: string) => {
+  // Initialize thread ID with shared thread if provided
+  useEffect(() => {
+    if (sharedThreadId && !threadId) {
+      console.log(`[${assistantType}] Using shared thread ID: ${sharedThreadId}`);
+      setThreadId(sharedThreadId);
+    } else if (sharedThreadId && threadId && sharedThreadId !== threadId) {
+      console.warn(`[${assistantType}] Thread ID mismatch! Local: ${threadId}, Shared: ${sharedThreadId}`);
+      console.log(`[${assistantType}] Updating to use shared thread: ${sharedThreadId}`);
+      setThreadId(sharedThreadId);
+    }
+  }, [sharedThreadId, threadId, assistantType]);
+
+  // Notify parent when our thread ID changes
+  useEffect(() => {
+    if (threadId && onThreadIdUpdate) {
+      onThreadIdUpdate(threadId);
+    }
+  }, [threadId, onThreadIdUpdate]);
+
+  // Helper function to get appropriate thread ID for the current model
+  const getModelSpecificThreadId = () => {
+    if (!threadId) return null;
+    
+    // ALWAYS return the current thread ID for shared conversation continuity
+    // The server will handle thread format conversion as needed
+    console.log(`[${assistantType}] Using thread ID: ${threadId} for model: ${currentModel}`);
+    return threadId;
+  };
+
+  const addMessage = (role: "user" | "assistant", content: string, model?: ModelType) => {
     const newMessage: Message = {
       id: Date.now().toString(),
       role,
       content,
       timestamp: new Date(),
+      model: role === 'user' ? undefined : model,
     };
     
     setMessages((prevMessages) => [...prevMessages, newMessage]);
@@ -558,9 +460,13 @@ Format your response with clear headings and bullet points where appropriate.`;
   };
 
   // Enhanced function to send messages with document context
-  const sendMessage = async (content: string) => {
-    if (!content.trim() || !isInitialized) return;
+  const sendMessage = async (content: string, isRetry = false) => {
+    if (!content.trim()) return;
+    
+    setIsLoading(true);
+    setError(null);
 
+    // Add user message to the conversation
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
@@ -569,159 +475,126 @@ Format your response with clear headings and bullet points where appropriate.`;
       };
       
     setMessages((prev) => [...prev, userMessage]);
-    setIsLoading(true);
-    setError(null);
-    if (onStateChange) {
-      onStateChange({ isInitialized: true, isLoading: true });
-    }
-
-    // Prepare message history (limit?) - consider token limits
-    const history = [...messages, userMessage]
-      .slice(-10) // Limit history to keep payload reasonable
-      .map((msg) => ({
-        role: msg.role,
-        content: msg.content,
-      }));
-
-    let functionPayload: any = {
-      assistantType,
-      messages: history,
-      sessionId,
-      threadId, // Include threadId if available
-      drugData: drugShortageData, // Pass context for the AI
-      allShortageData: allShortageData, // Pass context for the AI
-      rawData: false, // Raw data only needed for initial generation
-    };
-
-    let isPotentialEditRequest = false; // Flag to track if user INTENDS to edit
-
-    // Specific handling for Document Assistant updates
-    if (assistantType === 'document' && isInitialized && documentContent !== undefined) {
-      // Check for keywords indicating an edit request
-      const editKeywords = ['edit', 'change', 'update', 'modify', 'add', 'remove', 'insert', 'delete', 'revise', 'rewrite'];
-      const lowerCaseContent = content.toLowerCase();
-      isPotentialEditRequest = editKeywords.some(keyword => lowerCaseContent.includes(keyword));
-
-      if (isPotentialEditRequest) {
-        console.log("[document] Potential edit request detected based on keywords.");
-        functionPayload = {
-          ...functionPayload,
-          updateDocument: true, // Flag for backend - let it decide if it can/should update
-          currentDocumentContent: documentContent, // Current state
-          userRequest: content, // The user's specific request
-        };
-      } else {
-         console.log("[document] Sending standard query/question to document assistant.");
-         // No need to add specific document update flags if it's likely just a question
-          functionPayload = {
-            ...functionPayload,
-            // Ensure userRequest is still passed for context if needed by backend for Q&A
-            userRequest: content, 
-         };
-      }
-    } else {
-      console.log(`[${assistantType}] Preparing standard chat request.`);
-    }
-
+    
     try {
-      console.log(`[${assistantType}] Calling Supabase function 'openai-assistant'... Payload keys:`, Object.keys(functionPayload));
-      const { data, error } = await supabase.functions.invoke("openai-assistant", {
-        body: functionPayload,
-      });
-
-      setIsLoading(false);
-      if (onStateChange) {
-        onStateChange({ isInitialized: true, isLoading: false });
+      const isDocumentEdit = assistantType === "document" && (
+        content.toLowerCase().includes("remove") ||
+        content.toLowerCase().includes("add") ||
+        content.toLowerCase().includes("change") ||
+        content.toLowerCase().includes("update") ||
+        content.toLowerCase().includes("edit") ||
+        content.toLowerCase().includes("modify") ||
+        content.toLowerCase().includes("delete") ||
+        content.toLowerCase().includes("list") ||
+        content.toLowerCase().includes("what are") ||
+        content.toLowerCase().includes("can you") ||
+        content.toLowerCase().includes("for each")
+      );
+      
+      if (isDocumentEdit) {
+        console.log(`[${assistantType}] Potential edit request detected based on keywords.`);
       }
+      
+      // Use model-specific thread ID
+      const modelThreadId = getModelSpecificThreadId();
+      
+      console.log(`[${assistantType}] Preparing standard chat request.`);
+      console.log(`[${assistantType}] Calling Supabase function 'openai-assistant'... Payload keys:`, Object.keys({
+        assistantType,
+        modelType: currentModel,
+        messages: [{ role: "user", content }],
+        drugData: drugShortageData,
+        allShortageData: allShortageData || [],
+        documentContent: assistantType === "document" ? documentContent : undefined,
+        sessionId,
+        threadId: modelThreadId,
+        isDocumentEdit: isDocumentEdit && assistantType === "document"
+      }));
+      
+      const { data, error } = await supabase.functions.invoke("openai-assistant", {
+        body: {
+          assistantType,
+          modelType: currentModel,
+          messages: [{ role: "user", content }],
+          drugData: drugShortageData,
+          allShortageData: allShortageData || [],
+          documentContent: assistantType === "document" ? documentContent : undefined,
+          sessionId,
+          threadId: modelThreadId, // Use model-specific thread ID
+          isDocumentEdit: isDocumentEdit && assistantType === "document"
+        },
+      });
 
       if (error) {
         console.error(`[${assistantType}] Supabase function error:`, error);
-        setError(`Error: ${error.message}`);
-        toast.error(`Assistant error: ${error.message}`);
-        // Remove the user message if the call failed?
-        // setMessages(prev => prev.slice(0, -1));
-        return; // Stop processing on error
+        throw error;
       }
 
       if (data.error) {
-        console.error(`[${assistantType}] Error from assistant function:`, data.error);
-        setError(`Assistant error: ${data.error}`);
-        toast.error(`Assistant error: ${data.error}`);
-        return; // Stop processing on error
+        console.error(`[${assistantType}] Backend error:`, data.error);
+        throw new Error(data.error);
       }
-
-      // Handle thread ID persistence
-      if (data.threadId && !threadId) {
-          console.log(`[${assistantType}] Received new thread ID: ${data.threadId}`);
-          setThreadId(data.threadId);
-          // Immediately save conversation state with the new thread ID
-          saveConversation([...messages, userMessage], data.threadId); 
-      }
-
-      if (data.message) {
-        console.log(`[${assistantType}] Received response message.`);
+      
+      console.log(`[${assistantType}] Received response message from ${currentModel} model.`);
+      console.log(`[${assistantType}] Server reported model: ${data.modelType || 'unknown'}`);
+      
+      // Handle the response based on assistant type
+      if (assistantType === "document" && isDocumentEdit && onDocumentUpdate) {
+        // Document edit response - ALWAYS update document content for document edits
+        console.log(`[${assistantType}] Document edit detected - updating content directly`);
+        console.log(`[${assistantType}] Response from ${currentModel} (${data.modelType}), content length: ${data.message?.length || 0}`);
+        
+        // Update the document with the response content
+        onDocumentUpdate(data.message + watermark);
+        
+        // Add a confirmation message to the chat
         const assistantMessage: Message = {
-          id: data.id || Date.now().toString(), // Use ID from response if available
+          id: Date.now().toString(),
           role: "assistant",
-          content: data.message, // Start with the raw response content
+          content: "✅ Document has been updated successfully with your requested changes.",
           timestamp: new Date(),
+          model: data.modelType || currentModel,
         };
-        
-        let finalMessages = [...messages, userMessage]; // Start with history + user message
-
-        // Handle potential document update response ONLY if it was requested
-        // And check if the response actually contains an updated document
-        let updatedDocContent = null;
-        if (assistantType === 'document' && isPotentialEditRequest) {
-            if (data.updatedDocumentContent) {
-                updatedDocContent = data.updatedDocumentContent;
-                console.log("[document] Received updated content in dedicated field.");
-            } else if (isDocumentContent(data.message)) {
-                 console.warn("[document] No 'updatedDocumentContent' field, using main message as document.");
-                 updatedDocContent = data.message;
-            } 
-        } // else: it wasn't a document edit request OR no updated doc found
-
-        // If an update happened and we got the content...
-        if (updatedDocContent !== null) {
-            console.log("[document] Successfully processed document update.");
-            // Call the update callback with the new content
-            if (onDocumentUpdate) {
-                onDocumentUpdate(updatedDocContent);
-            } else {
-                console.warn("[document] onDocumentUpdate callback is missing!");
-            }
-            // Set the chat message to the confirmation + refresh text
-            assistantMessage.content = "I've updated the document based on your request. Please refresh to view changes.";
-        } else if (assistantType === 'document' && isPotentialEditRequest) {
-             // It was an edit request, but we didn't get updated content back.
-             // Use the AI's message directly (might be explanation/error)
-             console.log("[document] Edit requested, but no updated content identified in response. Using raw response.");
-             assistantMessage.content = data.message; 
-        } // else: standard shortage request or document question - use raw response (already set)
-        
-        // Add the final assistant message (either raw response or confirmation) to chat
-        finalMessages.push(assistantMessage);
-
-        setMessages(finalMessages);
-        // Save conversation after state is updated
-        saveConversation(finalMessages, threadId || data.threadId); // Pass threadId
-
+        setMessages((prev) => [...prev, assistantMessage]);
       } else {
-        console.warn(`[${assistantType}] No message content received from assistant.`);
-        // Save conversation state even if no message content received?
-        saveConversation([...messages, userMessage], threadId || data.threadId);
+        // Regular chat response
+        console.log(`[${assistantType}] Chat response from ${currentModel} (${data.modelType}), content length: ${data.message?.length || 0}`);
+        const assistantMessage: Message = {
+          id: Date.now().toString(),
+          role: "assistant",
+          content: data.message,
+          timestamp: new Date(),
+          model: data.modelType || currentModel,
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
       }
+      
+      // Update thread ID if we got a new one (especially important for first message)
+      if (data.threadId && data.threadId !== threadId) {
+        setThreadId(data.threadId);
+        if (onThreadIdUpdate) {
+          onThreadIdUpdate(data.threadId);
+        }
+      }
+      
+      // Save the conversation
+      await saveConversation();
+      
     } catch (err: any) {
       console.error(`[${assistantType}] Error sending message:`, err);
-      setError(err.message || "An unexpected error occurred.");
-      toast.error(`Error: ${err.message || "An unexpected error occurred."}`);
+      setError(err.message || "Failed to send message");
+      
+      // Add error message to chat
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        role: "assistant",
+        content: "Sorry, I encountered an error processing your request. Please try again.",
+        timestamp: new Date(),
+        model: currentModel,
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
       setIsLoading(false);
-      if (onStateChange) {
-        onStateChange({ isInitialized: true, isLoading: false });
-      }
-      // Consider saving state even on catch?
-      saveConversation([...messages, userMessage], threadId);
     }
   };
 
@@ -763,6 +636,7 @@ Format your response with clear headings and bullet points where appropriate.`;
             content: m.content,
             timestamp: m.timestamp.toISOString() // Store as ISO string
         }))),
+        p_model_type: currentModel // Include the current model type
       };
       console.log("Payload for save_ai_conversation:", payload);
 
@@ -838,5 +712,61 @@ Format your response with clear headings and bullet points where appropriate.`;
       }
   };
 
-  return { messages, isLoading, error, sendMessage, addMessage, threadId, isInitialized };
+  // Function to switch between models
+  const switchModel = async (newModel: ModelType) => {
+    if (newModel === currentModel) return;
+    
+    console.log(`[${assistantType}] Switching from ${currentModel} to ${newModel}`);
+    
+    // Save current conversation in the background (don't block UI)
+    const saveCurrentConversation = async () => {
+      if (messages.length > 0 && sessionId && threadId) {
+        try {
+          console.log(`[${assistantType}] Saving ${messages.length} messages for ${currentModel} before switch`);
+          await supabase.rpc('save_ai_conversation' as any, {
+            p_session_id: sessionId,
+            p_assistant_type: assistantType,
+            p_thread_id: threadId,
+            p_messages: JSON.stringify(messages),
+            p_model_type: currentModel
+          } as any);
+        } catch (err) {
+          console.error("Error saving conversation during model switch:", err);
+        }
+      }
+    };
+    
+    // Save current conversation and switch model immediately
+    await saveCurrentConversation();
+    setCurrentModel(newModel);
+    
+    // Update all conversations state
+    setAllConversations(prev => ({
+      ...prev,
+      [currentModel]: messages
+    }));
+    
+    // Notify parent component of model switch
+    if (onModelSwitch) {
+      onModelSwitch(newModel);
+    }
+    
+    // IMPORTANT: Keep the same thread ID across model switches
+    // This ensures both models participate in the same conversation
+    console.log(`[${assistantType}] Model switched to ${newModel}, keeping shared thread ID: ${threadId}`);
+    console.log(`[${assistantType}] Thread continuity: Messages from ${currentModel} should be accessible to ${newModel}`);
+  };
+
+  return { 
+    messages, 
+    isLoading, 
+    error, 
+    sendMessage, 
+    addMessage, 
+    threadId, 
+    isInitialized,
+    currentModel,
+    switchModel,
+    allConversations
+  };
 };
