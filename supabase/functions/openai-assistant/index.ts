@@ -160,14 +160,15 @@ async function handleTxAgentRequest({
         // IMPROVED: Handle cases with or without Drug Shortages API data
         const hasApiData = drugData && Object.keys(drugData).length > 0;
         
-        prompt = `You are a clinical decision support LLM. Your task is to generate a drug shortage document for "${drugName || 'Unknown Drug'}".
+        prompt = `You are a clinical decision support LLM that is built to help clinicians and decision makers make better decisions about the impact of a drug shortageYour task is to generate a drug shortage document for "${drugName || 'Unknown Drug'}". This document will be used to summarize the potential impact but also to help in the response. 
 You MUST generate the document using markdown and follow all instructions precisely.
 
 **CRITICAL INSTRUCTIONS:**
-- NEVER leave any section with "N/A" or blank values
-- If specific data is not available, provide general clinical information for the drug class
-- Research and provide accurate therapeutic information based on the drug name
-- Always fill in all sections with meaningful clinical content that can be acted upon by hospital staff
+- NEVER leave any section with "N/A" or blank values. If there is no information just don't include it. 
+- take into account the formulation of the shortage. This can be a difference for many drugs. 
+- Research and provide accurate therapeutic information based on the drug name. Use information that is up-to-date and is based on multiple sources. 
+- Always fill in all sections with meaningful clinical content that can be acted upon by hospital staff. This is information meant for clinicians so be technical and have enough information for them to draw upon. 
+- the document can be no longer than 5 pages. 
 
 **DOCUMENT STRUCTURE REQUIREMENTS:**
 1. Start with the main title: "Drug Shortage Clinical Response Template"
@@ -183,22 +184,22 @@ You MUST generate the document using markdown and follow all instructions precis
    - **Available Market Alternatives:** Research and list available alternatives
 
 4. Create a level 3 markdown heading titled "2. Major Indications". Under it, create bulleted lists for:
-   - **On-label:** Research and provide FDA/Health Canada approved indications
-   - **Common Off-label:** Research and provide common and niche off-label uses that the pharmacist should know about
+   - **On-label:** Research and provide FDA/Health Canada approved indications. Use he full language from the indication. 
+   - **Common Off-label:** Research and provide all known off-label uses that the pharmacist should know about and have on their radar.
 
-5. Create a level 3 markdown heading titled "3. Therapeutic Alternatives by Indication". Under it, create a bulleted list sorted by "Indication". Alternatives should be equivalent where feesibale. This information can be drawn from clinical guidelines or other information. If no equivalent drug is available offer the next line therapy and note that it is a next line and any limitations. Populate with all at least 3 common indications listed in the above section and their alternatives that follow guidelines recommedations for the indication. This should take into account the formulation and note it. One of the alternatives could be lower dosages or combinations. Lastly, highlight indications that are more in need of this drugs if they had to be prioritized. Account for size of the population and other therapeutic options.
+5. Create a level 3 markdown heading titled "3. Therapeutic Alternatives by Indication". Under it, create bulleted lists sorted by "Indication", (this should map over to the above section) with "Alternatives" and "Notes" for each indication. Alternatives should be equivalent where feasible. This information can be drawn from clinical guidelines or other information. If no equivalent drug is available offer the next line therapy and note that I ti sa next line and any limitations.  Populate with allindications listed in the above section and their alternatives that follow guidelines recommedations for the indication. This should take into account the formulation and note it. One of the alternatives could be lower dosages or combinations. 
+
+Lastly, highlight indications that are more in need of this drugs if they had to be prioritized. Account for size of the population and other therapeutic options. When doing this also takeinto account if the other alternative also has an active shortage. Try not to suggest thing sin shortage. 
 
 6. Create a level 3 markdown heading titled "4. Subpopulations of Concern". Under it, create bulleted lists sorted by "Population" and their "Considerations". Include actionable info for any subpopulations of concern for the drug, such as Pediatrics, Renal impairment, Pregnant/lactating, and Elderly patients as applicable. If we mention dosage adjustments or alternatives or any sort of recommendation, make sure that the recommendation is actionable, specicific, and can be acted upon by hospital staff.
 
-7. Create a level 3 markdown heading titled "5. Other Considerations". Under it, create bulleted lists for:
+7. Create a level 3 markdown heading titled "5. Other Considerations". These should only be included if they apply Under it, create bulleted lists for:
    - **Infection control implications:** Provide relevant considerations (be specific)
-   - **Formulary impacts:** Describe potential impacts (be specific)
-   - **Communication needs:** Outline communication requirements
-   - **Reconstitution practices:** Provide relevant guidance (be specific)
-   - **Stockpiling mitigation:** Suggest mitigation strategies (be specific)
+   - **Communication needs:** Outline communication requirements. This can include things like switching formulations or risks with this switch. Also account for this if there is prioritization or dose reductions to save drug. 
+   - **Reconstitution practices:** Provide relevant guidance (be specific). Align this with any recommendations if formulation switches or compounding must/can occur. 
+   - **Salving of doses:** Suggest strategies for salving doses (be specific)
 
 ${hasApiData ? `\n**Available Drug Data:**\n${JSON.stringify(drugData, null, 2)}\n\nUse this data where relevant, but supplement with your clinical knowledge to ensure no section is left incomplete.` : `\n**No specific shortage data available.** Research the drug "${drugName || 'Unknown Drug'}" and provide comprehensive clinical information based on your knowledge.`}
-
 Generate the complete document now:`;
       } else {
         // This is the prompt for follow-up edits or questions.
