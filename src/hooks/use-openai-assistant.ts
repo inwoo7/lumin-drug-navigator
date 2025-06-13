@@ -29,6 +29,7 @@ type UseOpenAIAssistantProps = {
   onModelSwitch?: (newModel: ModelType) => void; // Callback when model is switched
   sharedThreadId?: string | null; // Optional shared thread ID for multi-assistant conversations
   onThreadIdUpdate?: (threadId: string) => void; // Callback when thread ID is created/updated
+  drugName?: string; // Drug name for cases without API data
 };
 
 export const useOpenAIAssistant = ({
@@ -46,6 +47,7 @@ export const useOpenAIAssistant = ({
   onModelSwitch,
   sharedThreadId,
   onThreadIdUpdate,
+  drugName,
 }: UseOpenAIAssistantProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -160,10 +162,13 @@ export const useOpenAIAssistant = ({
     }
 
     const generateDocumentFromData = async () => {
+      // REMOVE API DEPENDENCY: Allow generation with drug name even without API data
+      const hasDrugInfo = drugShortageData || drugName;
+      
       if (
         assistantType !== "document" || 
         !generateDocument || 
-        !drugShortageData || 
+        !hasDrugInfo || 
         hasAttemptedGeneration || 
         !sessionId ||
         isLoading ||
@@ -171,7 +176,7 @@ export const useOpenAIAssistant = ({
       ) {
         if (assistantType === "document" && !isInitialized && !isLoading && !isRestoredSession) {
           console.log("Document assistant not generating document but marking as initialized");
-          console.log(`Debug - generateDocument: ${generateDocument}, drugShortageData: ${!!drugShortageData}, hasAttemptedGeneration: ${hasAttemptedGeneration}, sessionId: ${!!sessionId}, documentContent length: ${documentContent?.length || 0}`);
+          console.log(`Debug - generateDocument: ${generateDocument}, hasDrugInfo: ${!!hasDrugInfo}, hasAttemptedGeneration: ${hasAttemptedGeneration}, sessionId: ${!!sessionId}, documentContent length: ${documentContent?.length || 0}`);
           setIsInitialized(true);
           if (onStateChange) {
             onStateChange({ isInitialized: true, isLoading: false });
@@ -181,7 +186,7 @@ export const useOpenAIAssistant = ({
       }
       
       console.log("[document] Starting document generation from drug data (not a restored session).");
-      console.log(`Debug - All conditions met for generation. drugShortageData brand_name: ${drugShortageData.brand_name}`);
+      console.log(`Debug - All conditions met for generation. drugShortageData: ${!!drugShortageData}, drugName: ${drugName}`);
       setHasAttemptedGeneration(true);
       setIsLoading(true);
       
@@ -202,7 +207,7 @@ export const useOpenAIAssistant = ({
         setMessages([initialMessage]);
         
         // Generate the document
-        const generationPrompt = `Generate a comprehensive drug shortage management plan for ${drugShortageData.brand_name || drugShortageData.drug_name}. 
+        const generationPrompt = `Generate a comprehensive drug shortage management plan for ${drugShortageData?.brand_name || drugShortageData?.drug_name || drugName || 'the requested drug'}. 
 Include the following sections:
 1. Executive Summary - Overview of the shortage situation
 2. Product Details - Information about the affected medication
@@ -230,7 +235,8 @@ Format the document in Markdown with clear headings and sections.`;
             allShortageData: allShortageData || [],
             sessionId,
             generateDocument: true,
-            rawData: shouldSendRawData // Only send raw data for new document generations
+            rawData: shouldSendRawData, // Only send raw data for new document generations
+            drugName // NEW: Pass drug name for cases without API data
           },
         });
         
@@ -508,7 +514,8 @@ Format the document in Markdown with clear headings and sections.`;
         documentContent: assistantType === "document" ? documentContent : undefined,
         sessionId,
         threadId: modelThreadId,
-        isDocumentEdit: isDocumentEdit && assistantType === "document"
+        isDocumentEdit: isDocumentEdit && assistantType === "document",
+        drugName // NEW: Pass drug name for cases without API data
       }));
       
       const { data, error } = await supabase.functions.invoke("openai-assistant", {
@@ -521,7 +528,8 @@ Format the document in Markdown with clear headings and sections.`;
           documentContent: assistantType === "document" ? documentContent : undefined,
           sessionId,
           threadId: modelThreadId, // Use model-specific thread ID
-          isDocumentEdit: isDocumentEdit && assistantType === "document"
+          isDocumentEdit: isDocumentEdit && assistantType === "document",
+          drugName // NEW: Pass drug name for cases without API data
         },
       });
 

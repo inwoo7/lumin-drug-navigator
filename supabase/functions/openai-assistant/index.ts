@@ -38,7 +38,8 @@ serve(async (req) => {
       sessionId,
       threadId,
       generateDocument = false,
-      isDocumentEdit = false
+      isDocumentEdit = false,
+      drugName // NEW: Support drugName when drugData is not available
     } = requestBody;
 
     console.log(`Received request for ${assistantType} assistant using ${modelType} model`);
@@ -56,6 +57,11 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" } 
         }
       );
+    }
+    
+    if (modelType === "txagent") {
+      console.log("TxAgent API key configured:", runpodApiKey ? "YES" : "NO");
+      console.log("TxAgent endpoint:", TXAGENT_BASE_URL);
     }
     
     if (modelType === "openai" && !openAIApiKey) {
@@ -88,7 +94,8 @@ serve(async (req) => {
         sessionId,
         threadId,
         generateDocument,
-        isDocumentEdit
+        isDocumentEdit,
+        drugName
       });
     } else {
       return await handleOpenAIRequest({
@@ -100,7 +107,8 @@ serve(async (req) => {
         sessionId,
         threadId,
         generateDocument,
-        isDocumentEdit
+        isDocumentEdit,
+        drugName
       });
     }
   } catch (error) {
@@ -125,9 +133,12 @@ async function handleTxAgentRequest({
   sessionId,
   threadId,
   generateDocument,
-  isDocumentEdit
+  isDocumentEdit,
+  drugName
 }: any) {
   try {
+    console.log("TxAgent handler starting...", { assistantType, generateDocument, drugName, hasDrugData: !!drugData });
+    
     // Build the prompt based on assistant type
     let prompt = "";
     
@@ -146,25 +157,49 @@ async function handleTxAgentRequest({
     } else {
       if (generateDocument && !documentContent) {
         // This is the prompt for initial document generation.
-        prompt = `You are a clinical decision support LLM. Your task is to generate a drug shortage document for the drug provided in the data below.
+        // IMPROVED: Handle cases with or without Drug Shortages API data
+        const hasApiData = drugData && Object.keys(drugData).length > 0;
+        
+        prompt = `You are a clinical decision support LLM. Your task is to generate a drug shortage document for "${drugName || 'Unknown Drug'}".
 You MUST generate the document using markdown and follow all instructions precisely.
 
-**DOCUMENT STRUCTURE REQUIREMENTS:**
-1.  Start with the main title: "Drug Shortage Clinical Response Template"
-2.  Add the following lines, populating the drug name and date:
-    - **Drug Name:** ${drugData.brand_name || 'N/A'}
-    - **Date:** [Insert current date]
-    - **Prepared by:** TxAgent
-    - **For Use By:** Clinicians, Pharmacists, Formulary Committees, Health System Planners
-3.  Create a level 3 markdown heading titled "1. Current Product Shortage Status". Under it, create a bulleted list for 'Molecule', 'Formulations in Shortage (Canada)', and 'Available Market Alternatives', and populate them with relevant information from the drug data.
-4.  Create a level 3 markdown heading titled "2. Major Indications". Under it, create bulleted lists for 'On-label' and 'Common Off-label' uses. You must research and provide common indications for the specified drug.
-5.  Create a level 3 markdown heading titled "3. Therapeutic Alternatives by Indication". Under it, create a markdown table with the columns "Indication", "Alternatives", and "Notes". Populate this table with at least three common indications and their therapeutic alternatives.
-6.  Create a level 3 markdown heading titled "4. Subpopulations of Concern". Under it, create a markdown table with the columns "Population" and "Considerations". Populate this table for 'Pediatrics', 'Renal impairment', 'Pregnant/lactating', and 'Penicillin Allergy'.
-7.  Create a level 3 markdown heading titled "5. Other Considerations". Under it, create a bulleted list for 'Infection control implications', 'Formulary impacts', 'Communication needs', 'Reconstitution practices', and 'Stockpiling mitigation', and provide a brief point for each.
+**CRITICAL INSTRUCTIONS:**
+- NEVER leave any section with "N/A" or blank values
+- If specific data is not available, provide general clinical information for the drug class
+- Research and provide accurate therapeutic information based on the drug name
+- Always fill in all sections with meaningful clinical content that can be acted upon by hospital staff
 
-Begin generating the document now based on this drug data:
-${JSON.stringify(drugData, null, 2)}
-`;
+**DOCUMENT STRUCTURE REQUIREMENTS:**
+1. Start with the main title: "Drug Shortage Clinical Response Template"
+2. Add the following lines, populating the drug name and date:
+   - **Drug Name:** ${drugName || 'Unknown Drug'}
+   - **Date:** ${new Date().toLocaleDateString()}
+   - **Prepared by:** [Your Name]
+   - **For Use By:** Clinicians, Pharmacists, Formulary Committees, Health System Planners
+
+3. Create a level 3 markdown heading titled "1. Current Product Shortage Status". Under it, create a bulleted list for:
+   - **Molecule:** Research and provide the generic/chemical name
+   - **Formulations in Shortage (Canada):** ${hasApiData ? 'Use provided data or' : ''} Research common formulations for this drug
+   - **Available Market Alternatives:** Research and list available alternatives
+
+4. Create a level 3 markdown heading titled "2. Major Indications". Under it, create bulleted lists for:
+   - **On-label:** Research and provide FDA/Health Canada approved indications
+   - **Common Off-label:** Research and provide common and niche off-label uses that the pharmacist should know about
+
+5. Create a level 3 markdown heading titled "3. Therapeutic Alternatives by Indication". Under it, create a bulleted list sorted by "Indication". Alternatives should be equivalent where feesibale. This information can be drawn from clinical guidelines or other information. If no equivalent drug is available offer the next line therapy and note that it is a next line and any limitations. Populate with all at least 3 common indications listed in the above section and their alternatives that follow guidelines recommedations for the indication. This should take into account the formulation and note it. One of the alternatives could be lower dosages or combinations. Lastly, highlight indications that are more in need of this drugs if they had to be prioritized. Account for size of the population and other therapeutic options.
+
+6. Create a level 3 markdown heading titled "4. Subpopulations of Concern". Under it, create bulleted lists sorted by "Population" and their "Considerations". Include actionable info for any subpopulations of concern for the drug, such as Pediatrics, Renal impairment, Pregnant/lactating, and Elderly patients as applicable. If we mention dosage adjustments or alternatives or any sort of recommendation, make sure that the recommendation is actionable, specicific, and can be acted upon by hospital staff.
+
+7. Create a level 3 markdown heading titled "5. Other Considerations". Under it, create bulleted lists for:
+   - **Infection control implications:** Provide relevant considerations (be specific)
+   - **Formulary impacts:** Describe potential impacts (be specific)
+   - **Communication needs:** Outline communication requirements
+   - **Reconstitution practices:** Provide relevant guidance (be specific)
+   - **Stockpiling mitigation:** Suggest mitigation strategies (be specific)
+
+${hasApiData ? `\n**Available Drug Data:**\n${JSON.stringify(drugData, null, 2)}\n\nUse this data where relevant, but supplement with your clinical knowledge to ensure no section is left incomplete.` : `\n**No specific shortage data available.** Research the drug "${drugName || 'Unknown Drug'}" and provide comprehensive clinical information based on your knowledge.`}
+
+Generate the complete document now:`;
       } else {
         // This is the prompt for follow-up edits or questions.
         prompt = `You are a clinical decision support LLM specializing in drug shortage management documentation.`;
@@ -184,7 +219,12 @@ ${JSON.stringify(drugData, null, 2)}
         }
     }
 
-    const response = await fetch(`${TXAGENT_BASE_URL}/chat/completions`, {
+    // Add timeout handling
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('TxAgent request timeout')), 45000) // 45 second timeout
+    );
+    
+    const responsePromise = fetch(`${TXAGENT_BASE_URL}/chat/completions`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${runpodApiKey}`,
@@ -199,6 +239,8 @@ ${JSON.stringify(drugData, null, 2)}
         temperature: 0.1
       })
     });
+    
+    const response = await Promise.race([responsePromise, timeoutPromise]) as Response;
     
     if (!response.ok) {
       throw new Error(`TxAgent API error: ${await response.text()}`);
@@ -264,7 +306,8 @@ ${JSON.stringify(drugData, null, 2)}
       sessionId,
       threadId,
       generateDocument,
-      isDocumentEdit
+      isDocumentEdit,
+      drugName
     });
   }
 }
@@ -279,7 +322,8 @@ async function handleOpenAIRequest({
   sessionId,
   threadId,
   generateDocument,
-  isDocumentEdit
+  isDocumentEdit,
+  drugName
 }: any) {
   try {
     // Select the appropriate assistant ID

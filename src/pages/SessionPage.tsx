@@ -100,9 +100,10 @@ const SessionPage = () => {
     sessionId,
     drugShortageData: selectedReportData,
     documentContent,
-    // ALWAYS auto-initialize and generate document when we have report data and no existing document
-    autoInitialize: !!selectedReportData && documentContent === "",
-    generateDocument: !!selectedReportData && documentContent === "",
+    drugName, // Pass drug name to allow generation without API data
+    // REMOVE API DEPENDENCY: Always auto-initialize and generate document when we have a drug name and no existing document
+    autoInitialize: !!drugName && documentContent === "" && !docLoadAttempted,
+    generateDocument: !!drugName && documentContent === "" && !docLoadAttempted,
     modelType: "txagent", // Use TxAgent for initial document generation
     sharedThreadId: sharedThreadId, // Share thread with shortage assistant
     onThreadIdUpdate: (threadId) => {
@@ -137,8 +138,8 @@ const SessionPage = () => {
         setIsDocumentAssistantReady(true);
       }
       
-      // Update loading state properly
-      if (state.isLoading && !isDocumentInitializing) {
+      // Update loading state properly - ONLY set loading if not already generated
+      if (state.isLoading && !isDocumentGenerated && !isDocumentInitializing) {
         setIsDocumentInitializing(true);
       }
       
@@ -147,6 +148,7 @@ const SessionPage = () => {
         console.log("Document assistant failed to initialize properly");
         setDocGenerationError(true);
         setIsDocumentAssistantReady(true); // Allow user to proceed anyway
+        setIsDocumentInitializing(false); // Stop loading state
       }
     }
   });
@@ -163,21 +165,23 @@ const SessionPage = () => {
 
   // Ensure loading state is set when document should be generating
   useEffect(() => {
-    if (selectedReportData && !isDocumentGenerated && documentContent === "" && !docGenerationError) {
+    // REMOVE API DEPENDENCY: Generate document based on drug name, not API data
+    if (drugName && !isDocumentGenerated && documentContent === "" && !docGenerationError && !docLoadAttempted) {
       console.log("Setting document initializing to true - conditions met for generation");
       setIsDocumentInitializing(true);
     }
-  }, [selectedReportData, isDocumentGenerated, documentContent, docGenerationError]);
+  }, [drugName, isDocumentGenerated, documentContent, docGenerationError, docLoadAttempted]);
 
   // Debug logging for document generation conditions
   useEffect(() => {
     console.log("Document generation debug:");
+    console.log("- drugName:", drugName);
     console.log("- selectedReportData:", !!selectedReportData, selectedReportData?.brand_name);
     console.log("- documentContent length:", documentContent.length);
-    console.log("- autoInitialize condition:", !!selectedReportData && documentContent === "");
-    console.log("- generateDocument condition:", !!selectedReportData && documentContent === "");
-    console.log("- should show loading screen:", (selectedReportData && !isDocumentGenerated && documentContent === ""));
-  }, [selectedReportData, documentContent, isDocumentGenerated]);
+    console.log("- autoInitialize condition:", !!drugName && documentContent === "" && !docLoadAttempted);
+    console.log("- generateDocument condition:", !!drugName && documentContent === "" && !docLoadAttempted);
+    console.log("- should show loading screen:", (drugName && !isDocumentGenerated && documentContent === "" && !docGenerationError));
+  }, [drugName, selectedReportData, documentContent, isDocumentGenerated, docGenerationError, docLoadAttempted]);
 
   // Initialize the Info AI Assistant to track when it's ready - but don't auto-generate reports
   // IMPORTANT: Use the same sessionId so both assistants can share the same thread
@@ -517,8 +521,7 @@ const SessionPage = () => {
   }, [isInitialLoading]);
 
   // Show loading screen when document is being generated for the first time
-  if ((selectedReportData && !isDocumentGenerated && documentContent === "") || 
-      (isDocumentInitializing && !isDocumentGenerated) ||
+  if ((drugName && !isDocumentGenerated && documentContent === "" && !docGenerationError) || 
       isInitialLoading || isLoading || isSessionLoading) {
     return (
       <div className="flex items-center justify-center min-h-[80vh] bg-gray-50">
