@@ -159,10 +159,10 @@ const SessionPage = () => {
   
   // Set initialization attempt flag when conditions are right
   useEffect(() => {
-    if (!!selectedReportData && !isDocumentGenerated && !docLoadAttempted && documentContent === "") {
+    if (!!drugName && !isDocumentGenerated && !docLoadAttempted && documentContent === "") {
       hasAttemptedDocInit.current = true;
     }
-  }, [selectedReportData, isDocumentGenerated, docLoadAttempted, documentContent]);
+  }, [drugName, isDocumentGenerated, docLoadAttempted, documentContent]);
 
   // Ensure loading state is set when document should be generating
   useEffect(() => {
@@ -182,6 +182,7 @@ const SessionPage = () => {
     console.log("- autoInitialize condition:", !!drugName && documentContent === "" && !docLoadAttempted);
     console.log("- generateDocument condition:", !!drugName && documentContent === "" && !docLoadAttempted);
     console.log("- should show loading screen:", (drugName && !isDocumentGenerated && documentContent === "" && !docGenerationError));
+    console.log("- API dependency removed: Document will generate with drugName only");
   }, [drugName, selectedReportData, documentContent, isDocumentGenerated, docGenerationError, docLoadAttempted]);
 
   // Initialize the Info AI Assistant to track when it's ready - but don't auto-generate reports
@@ -257,14 +258,19 @@ const SessionPage = () => {
           console.log("New session or incomplete data, preparing for document generation");
           setIsInitialLoading(true);
           
-          // Only load existing document if we don't have report data to generate new one
-          if (!selectedReportData) {
-            await loadDocument();
+          // Always try to load existing document first (REMOVED API DEPENDENCY)
+          await loadDocument();
+          
+          // If no document was loaded and we have a drug name, let the assistant generate one
+          if (!isDocumentGenerated && documentContent === "" && drugName) {
+            console.log("No existing document found, will generate new one");
+            // Document generation will be triggered by the useOpenAIAssistant hook
+          } else if (isDocumentGenerated || documentContent !== "") {
+            console.log("Existing document loaded, skipping generation");
             setIsInfoAssistantReady(true);
             setIsDocumentAssistantReady(true);
             setIsInitialLoading(false);
           }
-          // If we have selectedReportData, let the assistant generate the document
         }
       } catch (err) {
         console.error("Error preloading session:", err);
@@ -275,7 +281,7 @@ const SessionPage = () => {
     preloadSession();
   }, [sessionId]);
 
-  // Check when assistants are ready - prioritize document generation
+  // Check when assistants are ready - prioritize document generation (REMOVED API DEPENDENCY)
   useEffect(() => {
     console.log(`Assistant ready states - Info: ${isInfoAssistantReady}, Document: ${isDocumentAssistantReady}`);
     console.log(`Document states - Generated: ${isDocumentGenerated}, Initializing: ${isDocumentInitializing}, Content Length: ${documentContent.length}`);
@@ -284,9 +290,9 @@ const SessionPage = () => {
     // Only show main UI when:
     // 1. Document is fully generated (content exists) AND assistant is ready, OR
     // 2. There's a generation error, OR  
-    // 3. No report data (nothing to generate)
-    if (selectedReportData) {
-      // We have report data - should generate document
+    // 3. We have drug name and no existing document to load
+    if (drugName && !docLoadAttempted) {
+      // We have a drug name - should generate document
       if (isDocumentGenerated && documentContent.length > 0) {
         console.log("Document fully generated, showing main UI");
         // Add a small delay to prevent flicker
@@ -301,15 +307,17 @@ const SessionPage = () => {
       } else {
         console.log("Still waiting for document generation...");
         setIsInitialLoading(true);
-        setIsDocumentInitializing(true);
+        if (!isDocumentInitializing) {
+          setIsDocumentInitializing(true);
+        }
       }
     } else {
-      // No report data - no document to generate
-      console.log("No report data to generate document from, showing main UI");
+      // No drug name or document already loaded - show main UI
+      console.log("No drug name for generation or document already loaded, showing main UI");
       setIsInitialLoading(false);
       setIsDocumentInitializing(false);
     }
-  }, [isDocumentGenerated, docGenerationError, documentContent.length, selectedReportData]);
+  }, [isDocumentGenerated, docGenerationError, documentContent.length, drugName, docLoadAttempted, isDocumentInitializing]);
   
   // Effect to handle document initialization state
   useEffect(() => {
