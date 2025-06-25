@@ -14,6 +14,7 @@ import { useSession, createSession, useDrugShortageReport, useDrugShortageSearch
 import { supabase } from "@/integrations/supabase/client";
 import { SessionDocument } from "@/types/supabase-rpc";
 import { useOpenAIAssistant } from "@/hooks/use-openai-assistant";
+import { formatDrugNameForDisplay } from "@/utils/drugNameUtils";
 
 const SESSION_TAB_STORAGE_KEY = 'lumin_active_session_tab';
 
@@ -528,7 +529,7 @@ const SessionPage = () => {
         <div className="text-center p-8 rounded-lg shadow-md bg-white">
           <div className="w-24 h-24 border-4 border-t-lumin-teal border-r-lumin-teal border-b-gray-200 border-l-gray-200 rounded-full animate-spin mx-auto mb-6"></div>
           <h2 className="text-2xl font-semibold text-gray-700 mb-2">Generating Document</h2>
-          <p className="text-gray-500 mb-4">Advanced Clinical Model is creating a comprehensive shortage management plan for {drugName || "this drug"}</p>
+          <p className="text-gray-500 mb-4">Advanced Clinical Model is creating a comprehensive shortage management plan for {formatDrugNameForDisplay(drugName || "this drug")}</p>
           <div className="bg-blue-50 p-3 rounded-md">
             <p className="text-sm text-blue-600">This may take 15-30 seconds as our specialized medical AI analyzes the data</p>
           </div>
@@ -546,7 +547,7 @@ const SessionPage = () => {
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold ml-2">{drugName} Shortage</h1>
+          <h1 className="text-2xl font-bold ml-2">{formatDrugNameForDisplay(drugName)} Shortage</h1>
         </div>
       </div>
       

@@ -8,6 +8,7 @@ import { AlertTriangle, Clock, Calendar, ExternalLink, Loader2 } from "lucide-re
 import { useDrugShortageSearch, useDrugShortageReport } from "@/hooks/use-drug-shortages";
 import { DrugShortageReport, DrugShortageSearchResult } from "@/integrations/drugShortage/api";
 import { Button } from "@/components/ui/button";
+import { formatDrugNameForDisplay } from "@/utils/drugNameUtils";
 
 type DrugShortageInfoProps = {
   drugName: string;
@@ -67,7 +68,7 @@ const DrugShortageInfo = ({
         <CardContent className="h-full flex items-center justify-center p-6">
           <div className="text-center space-y-4">
             <Loader2 className="h-8 w-8 animate-spin mx-auto text-lumin-teal" />
-            <p className="text-gray-500">Retrieving shortage information for {drugName}...</p>
+            <p className="text-gray-500">Retrieving shortage information for {formatDrugNameForDisplay(drugName)}...</p>
           </div>
         </CardContent>
       </Card>;
@@ -80,7 +81,7 @@ const DrugShortageInfo = ({
             <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto" />
             <h3 className="font-medium">Error Fetching Shortage Data</h3>
             <p className="text-sm text-gray-500">
-              We couldn't retrieve shortage information for {drugName}.
+              We couldn't retrieve shortage information for {formatDrugNameForDisplay(drugName)}.
             </p>
             <Button variant="outline" onClick={() => window.location.reload()} className="mt-4">
               Try Again
@@ -94,7 +95,7 @@ const DrugShortageInfo = ({
     return <Card className="h-full">
         <CardHeader>
           <CardTitle>No Shortages Found</CardTitle>
-          <CardDescription>No current shortage reports for {drugName}</CardDescription>
+          <CardDescription>No current shortage reports for {formatDrugNameForDisplay(drugName)}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="bg-green-50 p-3 rounded-md border border-green-200">
@@ -137,7 +138,7 @@ const DrugShortageInfo = ({
   if (isReportLoading || !report) {
     return <Card className="h-full">
         <CardHeader>
-          <CardTitle className="text-xl">{drugName}</CardTitle>
+          <CardTitle className="text-xl">{formatDrugNameForDisplay(drugName)}</CardTitle>
           <CardDescription>Loading report details...</CardDescription>
         </CardHeader>
         <CardContent>

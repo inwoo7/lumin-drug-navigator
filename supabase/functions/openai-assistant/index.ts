@@ -18,6 +18,9 @@ const DOCUMENT_ASSISTANT_ID = "asst_YD3cbgbhibchd3NltzVtP2VO";
 // TxAgent configuration
 const TXAGENT_BASE_URL = "https://api.runpod.ai/v2/os7ld1gn1e2us3/openai/v1";
 const TXAGENT_MODEL = "mims-harvard/TxAgent-T1-Llama-3.1-8B";
+const TXAGENT_TIMEOUT_DOCUMENT = 180000; // 3 minutes for document generation
+const TXAGENT_TIMEOUT_CHAT = 45000; // 45 seconds for chat
+const MAX_RETRIES = 3;
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -123,6 +126,43 @@ serve(async (req) => {
   }
 });
 
+// Helper function to normalize drug names
+function normalizeDrugName(drugName: string): string {
+  if (!drugName) return 'Unknown Drug';
+  
+  // Remove special formatting like capitals in middle of words
+  return drugName
+    .toLowerCase()
+    .replace(/([a-z])([A-Z])/g, '$1$2') // Handle camelCase
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .trim();
+}
+
+// Helper function for retry logic
+async function retryTxAgentRequest(requestFn: () => Promise<Response>, maxRetries: number = MAX_RETRIES): Promise<Response> {
+  let lastError: Error;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`TxAgent attempt ${attempt}/${maxRetries}`);
+      const response = await requestFn();
+      return response;
+    } catch (error) {
+      lastError = error as Error;
+      console.error(`TxAgent attempt ${attempt} failed:`, error);
+      
+      if (attempt < maxRetries) {
+        // Exponential backoff: 5s, 10s, 20s
+        const delay = Math.pow(2, attempt) * 2500;
+        console.log(`Waiting ${delay}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  
+  throw lastError;
+}
+
 // TxAgent handler function
 async function handleTxAgentRequest({
   assistantType,
@@ -137,7 +177,16 @@ async function handleTxAgentRequest({
   drugName
 }: any) {
   try {
-    console.log("TxAgent handler starting...", { assistantType, generateDocument, drugName, hasDrugData: !!drugData });
+    // Normalize drug name for better processing
+    const normalizedDrugName = normalizeDrugName(drugName || drugData?.drug_name || drugData?.brand_name);
+    
+    console.log("TxAgent handler starting...", { 
+      assistantType, 
+      generateDocument, 
+      originalDrugName: drugName,
+      normalizedDrugName,
+      hasDrugData: !!drugData 
+    });
     
     // Build the prompt based on assistant type
     let prompt = "";
@@ -160,20 +209,22 @@ async function handleTxAgentRequest({
         // IMPROVED: Handle cases with or without Drug Shortages API data
         const hasApiData = drugData && Object.keys(drugData).length > 0;
         
-        prompt = `You are a clinical decision support LLM that is built to help clinicians and decision makers make better decisions about the impact of a drug shortageYour task is to generate a drug shortage document for "${drugName || 'Unknown Drug'}". This document will be used to summarize the potential impact but also to help in the response. 
+        prompt = `You are a clinical decision support LLM that is built to help clinicians and decision makers make better decisions about the impact of a drug shortage. Your task is to generate a drug shortage document for "${normalizedDrugName}". This document will be used to summarize the potential impact but also to help in the response. 
 You MUST generate the document using markdown and follow all instructions precisely.
 
 **CRITICAL INSTRUCTIONS:**
-- NEVER leave any section with "N/A" or blank values. If there is no information just don't include it. 
-- take into account the formulation of the shortage. This can be a difference for many drugs. 
-- Research and provide accurate therapeutic information based on the drug name. Use information that is up-to-date and is based on multiple sources. 
+- NEVER leave any section with "N/A", "TBD", "To be determined", or blank values. If you don't have specific information, provide general clinical guidance based on the drug class and common clinical practice.
+- Take into account the formulation of the shortage. This can be a difference for many drugs. 
+- Research and provide accurate therapeutic information based on the drug name "${normalizedDrugName}". Use information that is up-to-date and is based on multiple sources. 
 - Always fill in all sections with meaningful clinical content that can be acted upon by hospital staff. This is information meant for clinicians so be technical and have enough information for them to draw upon. 
-- the document can be no longer than 5 pages. 
+- The document can be no longer than 5 pages.
+- EVERY section must contain substantive clinical information. Do not create empty sections.
+- If you're unsure about specific details, provide general guidance based on the drug's therapeutic class and known clinical uses. 
 
 **DOCUMENT STRUCTURE REQUIREMENTS:**
 1. Start with the main title: "Drug Shortage Clinical Response Template"
 2. Add the following lines, populating the drug name and date:
-   - **Drug Name:** ${drugName || 'Unknown Drug'}
+   - **Drug Name:** ${normalizedDrugName}
    - **Date:** ${new Date().toLocaleDateString()}
    - **Prepared by:** [Your Name]
    - **For Use By:** Clinicians, Pharmacists, Formulary Committees, Health System Planners
@@ -184,12 +235,12 @@ You MUST generate the document using markdown and follow all instructions precis
    - **Available Market Alternatives:** Research and list available alternatives
 
 4. Create a level 3 markdown heading titled "2. Major Indications". Under it, create bulleted lists for:
-   - **On-label:** Research and provide FDA/Health Canada approved indications. Use he full language from the indication. 
+   - **On-label:** Research and provide FDA/Health Canada approved indications. Use the full language from the indication. 
    - **Common Off-label:** Research and provide all known off-label uses that the pharmacist should know about and have on their radar.
 
-5. Create a level 3 markdown heading titled "3. Therapeutic Alternatives by Indication". Under it, create bulleted lists sorted by "Indication", (this should map over to the above section) with "Alternatives" and "Notes" for each indication. Alternatives should be equivalent where feasible. This information can be drawn from clinical guidelines or other information. If no equivalent drug is available offer the next line therapy and note that I ti sa next line and any limitations.  Populate with allindications listed in the above section and their alternatives that follow guidelines recommedations for the indication. This should take into account the formulation and note it. One of the alternatives could be lower dosages or combinations. 
+5. Create a level 3 markdown heading titled "3. Therapeutic Alternatives by Indication". Under it, create bulleted lists sorted by "Indication", (this should map over to the above section) with "Alternatives" and "Notes" for each indication. Alternatives should be equivalent where feasible. This information can be drawn from clinical guidelines or other information. If no equivalent drug is available offer the next line therapy and note that it is a next line and any limitations. Populate with all indications listed in the above section and their alternatives that follow guidelines recommendations for the indication. This should take into account the formulation and note it. One of the alternatives could be lower dosages or combinations. 
 
-Lastly, highlight indications that are more in need of this drugs if they had to be prioritized. Account for size of the population and other therapeutic options. When doing this also takeinto account if the other alternative also has an active shortage. Try not to suggest thing sin shortage. 
+Lastly, highlight indications that are more in need of this drug if they had to be prioritized. Account for size of the population and other therapeutic options. When doing this also take into account if the other alternative also has an active shortage. Try not to suggest things in shortage. 
 
 6. Create a level 3 markdown heading titled "4. Subpopulations of Concern". Under it, create bulleted lists sorted by "Population" and their "Considerations". Include actionable info for any subpopulations of concern for the drug, such as Pediatrics, Renal impairment, Pregnant/lactating, and Elderly patients as applicable. If we mention dosage adjustments or alternatives or any sort of recommendation, make sure that the recommendation is actionable, specicific, and can be acted upon by hospital staff.
 
@@ -197,9 +248,9 @@ Lastly, highlight indications that are more in need of this drugs if they had to
    - **Infection control implications:** Provide relevant considerations (be specific)
    - **Communication needs:** Outline communication requirements. This can include things like switching formulations or risks with this switch. Also account for this if there is prioritization or dose reductions to save drug. 
    - **Reconstitution practices:** Provide relevant guidance (be specific). Align this with any recommendations if formulation switches or compounding must/can occur. 
-   - **Salving of doses:** Suggest strategies for salving doses (be specific)
+   - **Saving of doses:** Suggest strategies for saving doses (be specific)
 
-${hasApiData ? `\n**Available Drug Data:**\n${JSON.stringify(drugData, null, 2)}\n\nUse this data where relevant, but supplement with your clinical knowledge to ensure no section is left incomplete.` : `\n**No specific shortage data available.** Research the drug "${drugName || 'Unknown Drug'}" and provide comprehensive clinical information based on your knowledge.`}
+${hasApiData ? `\n**Available Drug Data:**\n${JSON.stringify(drugData, null, 2)}\n\nUse this data where relevant, but supplement with your clinical knowledge to ensure no section is left incomplete.` : `\n**No specific shortage data available.** Research the drug "${normalizedDrugName}" and provide comprehensive clinical information based on your knowledge.`}
 Generate the complete document now:`;
       } else {
         // This is the prompt for follow-up edits or questions.
@@ -220,35 +271,146 @@ Generate the complete document now:`;
         }
     }
 
-    // Add timeout handling
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('TxAgent request timeout')), 45000) // 45 second timeout
-    );
+    // Determine timeout based on operation type
+    const timeout = generateDocument ? TXAGENT_TIMEOUT_DOCUMENT : TXAGENT_TIMEOUT_CHAT;
     
-    const responsePromise = fetch(`${TXAGENT_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${runpodApiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: TXAGENT_MODEL,
-        messages: [
-          { role: "user", content: prompt }
-        ],
-        max_tokens: 1500,
-        temperature: 0.1
-      })
-    });
+    // Create the request function for retry logic
+    const makeRequest = async (): Promise<Response> => {
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error(`TxAgent request timeout after ${timeout/1000}s`)), timeout)
+      );
+      
+      const responsePromise = fetch(`${TXAGENT_BASE_URL}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${runpodApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: TXAGENT_MODEL,
+          messages: [
+            { role: "user", content: prompt }
+          ],
+          max_tokens: generateDocument ? 2000 : 1500, // More tokens for document generation
+          temperature: 0.1
+        })
+      });
+      
+      const response = await Promise.race([responsePromise, timeoutPromise]) as Response;
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`TxAgent API error (${response.status}): ${errorText}`);
+      }
+      
+      return response;
+    };
     
-    const response = await Promise.race([responsePromise, timeoutPromise]) as Response;
+    // Use retry logic for document generation, single attempt for chat
+    const response = generateDocument 
+      ? await retryTxAgentRequest(makeRequest)
+      : await makeRequest();
+    const data = await response.json();
     
-    if (!response.ok) {
-      throw new Error(`TxAgent API error: ${await response.text()}`);
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      throw new Error('Invalid response format from TxAgent');
     }
     
-    const data = await response.json();
-    const messageContent = data.choices[0].message.content;
+    let messageContent = data.choices[0].message.content;
+    
+    if (!messageContent || messageContent.trim().length === 0) {
+      throw new Error('Empty response from TxAgent');
+    }
+    
+    // Additional validation for document generation
+    if (generateDocument) {
+      console.log(`TxAgent document generation response length: ${messageContent.length} characters`);
+      
+      // Check if the document appears to have proper structure
+      const headerCount = (messageContent.match(/^#{1,6}\s/gm) || []).length;
+      const hasMainTitle = messageContent.includes('Drug Shortage Clinical Response Template');
+      const hasStructuredContent = messageContent.includes('**') && messageContent.includes('###');
+      
+      console.log(`Document validation - Headers: ${headerCount}, HasMainTitle: ${hasMainTitle}, HasStructuredContent: ${hasStructuredContent}`);
+      
+      if (headerCount < 3 || !hasMainTitle || !hasStructuredContent) {
+        console.warn('TxAgent generated document appears to be incomplete or improperly structured');
+        console.log('First 500 characters of response:', messageContent.substring(0, 500));
+        
+        // If the document is clearly incomplete, try once more with a more explicit prompt
+        if (messageContent.length < 800 || headerCount < 2) {
+          console.log('Document appears too short or malformed, attempting retry with enhanced prompt');
+          
+          const enhancedPrompt = `You are a clinical decision support LLM. Generate a COMPLETE drug shortage document for "${normalizedDrugName}". 
+
+IMPORTANT: You must generate a FULL document with ALL sections filled out with real clinical information. Do not use placeholders, "N/A", or empty sections.
+
+Generate a complete markdown document with this exact structure:
+
+# Drug Shortage Clinical Response Template
+
+**Drug Name:** ${normalizedDrugName}
+**Date:** ${new Date().toLocaleDateString()}
+**Prepared by:** Clinical AI Assistant
+**For Use By:** Clinicians, Pharmacists, Formulary Committees, Health System Planners
+
+### 1. Current Product Shortage Status
+- **Molecule:** [Provide the generic name and chemical class]
+- **Formulations in Shortage (Canada):** [List common formulations like tablets, injections, etc.]
+- **Available Market Alternatives:** [List available alternatives]
+
+### 2. Major Indications
+- **On-label:** [List FDA/Health Canada approved uses]
+- **Common Off-label:** [List common off-label uses]
+
+### 3. Therapeutic Alternatives by Indication
+[For each indication, provide specific alternatives with clinical notes]
+
+### 4. Shortage Management Strategies
+- **Conservation strategies:** [Specific dose-sparing approaches]
+- **Alternative formulations:** [Other available forms]
+- **Compounding options:** [If applicable]
+
+### 5. Clinical Considerations
+[Important clinical guidance for prescribers]
+
+Fill every section with detailed, actionable clinical information. Make it comprehensive and clinically useful.`;
+
+          try {
+            const retryResponse = await fetch(`${TXAGENT_BASE_URL}/chat/completions`, {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${runpodApiKey}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                model: TXAGENT_MODEL,
+                messages: [{ role: "user", content: enhancedPrompt }],
+                max_tokens: 2500,
+                temperature: 0.1
+              })
+            });
+            
+            if (retryResponse.ok) {
+              const retryData = await retryResponse.json();
+              const retryContent = retryData.choices?.[0]?.message?.content;
+              if (retryContent && retryContent.length > messageContent.length) {
+                console.log('Enhanced prompt retry successful, using improved response');
+                messageContent = retryContent;
+              }
+            }
+          } catch (retryError) {
+            console.log('Retry with enhanced prompt failed, using original response');
+          }
+        }
+      }
+      
+      // Check for common empty content indicators
+      const hasEmptyIndicators = /\b(N\/A|TBD|To be determined|TODO|PLACEHOLDER|\[.*\])\b/i.test(messageContent);
+      if (hasEmptyIndicators) {
+        console.warn('TxAgent document contains empty content indicators');
+      }
+    }
     
     // Create a mock thread ID for TxAgent (since it doesn't use threads)
     const txagentThreadId = threadId || `txagent_${Date.now()}`;
@@ -261,7 +423,7 @@ Generate the complete document now:`;
       allMessages.push({
         id: `txagent_${Date.now()}`,
         role: "assistant",
-        content: "I've generated a document based on the drug shortage data. You can now ask me to make changes or explain any part of it.",
+        content: "I've generated a comprehensive drug shortage document. You can now ask me to make changes or explain any part of it.",
         timestamp: Date.now(),
         model: 'txagent'
       });
@@ -296,8 +458,24 @@ Generate the complete document now:`;
   } catch (error) {
     console.error("TxAgent error:", error);
     
-    // Fallback to OpenAI if TxAgent fails
-    console.log("Falling back to OpenAI due to TxAgent error");
+    // CRITICAL CHANGE: Never fall back to OpenAI for document generation
+    if (generateDocument) {
+      console.error("Document generation failed with TxAgent. This is a critical error that should be resolved.");
+      return new Response(
+        JSON.stringify({ 
+          error: `Document generation failed: ${error.message}. Please try again in a moment as the system may be initializing.`,
+          isTxAgentError: true,
+          shouldRetry: true
+        }),
+        { 
+          status: 503, // Service Temporarily Unavailable
+          headers: { ...corsHeaders, "Content-Type": "application/json" } 
+        }
+      );
+    }
+    
+    // Only fall back to OpenAI for chat/questions, not document generation
+    console.log("Falling back to OpenAI for chat/questions due to TxAgent error");
     return await handleOpenAIRequest({
       assistantType,
       messages,
@@ -306,9 +484,9 @@ Generate the complete document now:`;
       documentContent,
       sessionId,
       threadId,
-      generateDocument,
+      generateDocument: false, // Force to false to prevent OpenAI document generation
       isDocumentEdit,
-      drugName
+      drugName: normalizeDrugName(drugName || drugData?.drug_name || drugData?.brand_name)
     });
   }
 }

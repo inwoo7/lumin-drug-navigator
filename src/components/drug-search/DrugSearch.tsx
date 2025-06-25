@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandList, CommandItem } from "@/components/ui/command";
 import { fetchRxNormDisplayTerms, RxNormDisplayTerm } from "@/integrations/rxnorm";
+import { formatDrugNameForDisplay } from "@/utils/drugNameUtils";
 
 const DrugSearch = () => {
   const [open, setOpen] = useState(false);
@@ -45,7 +46,9 @@ const DrugSearch = () => {
   const handleSelectDrug = (drug: RxNormDisplayTerm) => {
     setOpen(false);
     setSearchTerm("");
-    navigate(`/session`, { state: { drugName: drug.name } });
+    // Use formatted drug name for better display
+    const formattedName = formatDrugNameForDisplay(drug.name);
+    navigate(`/session`, { state: { drugName: formattedName } });
   };
 
   return (
@@ -75,7 +78,7 @@ const DrugSearch = () => {
                         value={drug.name}
                         onSelect={() => handleSelectDrug(drug)}
                       >
-                        {drug.name}
+                        {formatDrugNameForDisplay(drug.name)}
                       </CommandItem>
                     ))}
                   </CommandGroup>

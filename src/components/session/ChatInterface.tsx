@@ -190,8 +190,11 @@ export function ChatInterface({
     const headerCount = (text.match(/^#{1,6}\s/gm) || []).length;
     const hasStructure = text.includes('##') || text.includes('**') || text.includes('###');
     const isLongForm = text.length > 300;
+    const hasMainTitle = text.includes('Drug Shortage Clinical Response Template');
+    const hasEmptyIndicators = /\b(N\/A|TBD|To be determined|TODO|PLACEHOLDER|\[.*\])\b/i.test(text);
     
-    console.log(`Document content check: headers=${headerCount}, hasStructure=${hasStructure}, length=${text.length}, isLongForm=${isLongForm}`);
+    console.log(`Document content check: headers=${headerCount}, hasStructure=${hasStructure}, length=${text.length}, isLongForm=${isLongForm}, hasMainTitle=${hasMainTitle}, hasEmptyIndicators=${hasEmptyIndicators}`);
+    console.log(`First 200 chars of content:`, text.substring(0, 200));
     
     return headerCount > 1 || (hasStructure && isLongForm) || text.length > 1000;
   };
