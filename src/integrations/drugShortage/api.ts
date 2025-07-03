@@ -1,4 +1,3 @@
-
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -58,6 +57,7 @@ interface ApiResponse<T> {
 interface EdgeFunctionError {
   error: string;
   missingCredentials?: boolean;
+  useMockData?: boolean;
 }
 
 // Check if Edge Function is accessible
@@ -183,6 +183,18 @@ export const searchDrugShortages = async (
     // Check if it's an error response
     if ((data as EdgeFunctionError).error) {
       const errorData = data as EdgeFunctionError;
+      
+      // If the error response includes useMockData flag, gracefully fall back to mock data
+      if (errorData.useMockData) {
+        console.warn("Drug Shortages Canada API unavailable, using mock data:", errorData.error);
+        toast.info("Using sample drug shortage data (API temporarily unavailable)", {
+          id: "mock-data-notice",
+          duration: 3000
+        });
+        return mockSearchDrugShortages(drugName);
+      }
+      
+      // For other errors, throw the ApiError as before
       throw new ApiError(errorData.error, errorData.missingCredentials);
     }
 
@@ -240,6 +252,18 @@ export const getDrugShortageReport = async (
     // Check if it's an error response
     if ((data as EdgeFunctionError).error) {
       const errorData = data as EdgeFunctionError;
+      
+      // If the error response includes useMockData flag, gracefully fall back to mock data
+      if (errorData.useMockData) {
+        console.warn("Drug Shortages Canada API unavailable, using mock data:", errorData.error);
+        toast.info("Using sample shortage report data (API temporarily unavailable)", {
+          id: "mock-report-notice",
+          duration: 3000
+        });
+        return mockGetDrugShortageReport(reportId, type);
+      }
+      
+      // For other errors, throw the ApiError as before
       throw new ApiError(errorData.error, errorData.missingCredentials);
     }
 

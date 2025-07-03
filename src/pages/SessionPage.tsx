@@ -164,15 +164,6 @@ const SessionPage = () => {
     }
   }, [drugName, isDocumentGenerated, docLoadAttempted, documentContent]);
 
-  // Ensure loading state is set when document should be generating
-  useEffect(() => {
-    // REMOVE API DEPENDENCY: Generate document based on drug name, not API data
-    if (drugName && !isDocumentGenerated && documentContent === "" && !docGenerationError && !docLoadAttempted) {
-      console.log("Setting document initializing to true - conditions met for generation");
-      setIsDocumentInitializing(true);
-    }
-  }, [drugName, isDocumentGenerated, documentContent, docGenerationError, docLoadAttempted]);
-
   // Debug logging for document generation conditions
   useEffect(() => {
     console.log("Document generation debug:");
@@ -223,53 +214,63 @@ const SessionPage = () => {
       try {
         console.log("Preloading session data and document...");
         
-        // Check if this is an existing session first
-        const { data: existingDoc } = await supabase
-          .rpc('get_session_document', { p_session_id: sessionId });
-          
-        const hasExistingDocument = existingDoc && existingDoc.length > 0 && existingDoc[0]?.content;
+        // CRITICAL FIX: Check for existing data FIRST before setting any loading states
+        // This prevents the loading screen flash for existing sessions
+        const [existingDocResponse, existingConvResponse] = await Promise.all([
+          supabase.rpc('get_session_document', { p_session_id: sessionId }),
+          supabase.rpc('get_ai_conversation', { 
+            p_session_id: sessionId, 
+            p_assistant_type: "document" 
+          })
+        ]);
+        
+        const hasExistingDocument = existingDocResponse.data && 
+                                   existingDocResponse.data.length > 0 && 
+                                   existingDocResponse.data[0]?.content;
         console.log("Has existing document:", hasExistingDocument);
         
-        // Check if this session already has conversations
-        const { data: existingConversations } = await supabase
-          .rpc('get_ai_conversation', { 
-            p_session_id: sessionId, 
-            p_assistant_type: "shortage" 
-          });
-        
-        const hasExistingConversation = existingConversations && 
-                                        existingConversations.length > 0 && 
-                                        existingConversations[0]?.messages;
+        const hasExistingConversation = existingConvResponse.data && 
+                                        existingConvResponse.data.length > 0 && 
+                                        existingConvResponse.data[0]?.messages;
         console.log("Has existing conversation:", hasExistingConversation);
         
-        if (hasExistingDocument && hasExistingConversation) {
-          // For existing sessions with data, we can skip the loading screen
-          console.log("Existing session with data found, skipping loading screen");
+        if (hasExistingDocument) {
+          // For existing sessions with documents, immediately load and show content
+          console.log("Existing session with document found, loading immediately");
+          
+          // Load the document content right away
+          const docContent = existingDocResponse.data[0].content;
+          setDocumentContent(docContent);
+          setIsDocumentGenerated(true);
+          setIsDocumentInitializing(false);
+          setDocLoadAttempted(true);
+          
+          // Set ready states immediately
           setIsInitialLoading(false);
           setIsInfoAssistantReady(true);
           setIsDocumentAssistantReady(true);
           
-          // Only load the document if we don't have fresh content being generated
-          if (!selectedReportData || documentContent) {
-            await loadDocument();
-          }
+          // Update session record
+          await supabase
+            .from('search_sessions')
+            .update({ has_document: true })
+            .eq('id', sessionId);
+          console.log("Updated session record to indicate document exists");
+          
+        } else if (hasExistingConversation) {
+          // Session exists but no document - prepare for potential generation
+          console.log("Existing session without document, preparing for generation");
+          setIsInitialLoading(true);
+          await loadDocument(); // Try to load any document that might exist
         } else {
-          // For new sessions or sessions without complete data, show loading
+          // Completely new session - prepare for document generation
           console.log("New session or incomplete data, preparing for document generation");
           setIsInitialLoading(true);
+          await loadDocument(); // Try to load any document that might exist
           
-          // Always try to load existing document first (REMOVED API DEPENDENCY)
-          await loadDocument();
-          
-          // If no document was loaded and we have a drug name, let the assistant generate one
+          // If no document was loaded and we have a drug name, generation will be triggered by useOpenAIAssistant
           if (!isDocumentGenerated && documentContent === "" && drugName) {
             console.log("No existing document found, will generate new one");
-            // Document generation will be triggered by the useOpenAIAssistant hook
-          } else if (isDocumentGenerated || documentContent !== "") {
-            console.log("Existing document loaded, skipping generation");
-            setIsInfoAssistantReady(true);
-            setIsDocumentAssistantReady(true);
-            setIsInitialLoading(false);
           }
         }
       } catch (err) {
@@ -279,44 +280,15 @@ const SessionPage = () => {
     };
     
     preloadSession();
-  }, [sessionId]);
+  }, [sessionId]); // Remove drugName dependency to prevent re-runs
 
   // Check when assistants are ready - prioritize document generation (REMOVED API DEPENDENCY)
   useEffect(() => {
     console.log(`Assistant ready states - Info: ${isInfoAssistantReady}, Document: ${isDocumentAssistantReady}`);
     console.log(`Document states - Generated: ${isDocumentGenerated}, Initializing: ${isDocumentInitializing}, Content Length: ${documentContent.length}`);
     
-    // Show loading screen until document is ACTUALLY generated (not just assistant is ready)
-    // Only show main UI when:
-    // 1. Document is fully generated (content exists) AND assistant is ready, OR
-    // 2. There's a generation error, OR  
-    // 3. We have drug name and no existing document to load
-    if (drugName && !docLoadAttempted) {
-      // We have a drug name - should generate document
-      if (isDocumentGenerated && documentContent.length > 0) {
-        console.log("Document fully generated, showing main UI");
-        // Add a small delay to prevent flicker
-        setTimeout(() => {
-          setIsInitialLoading(false);
-          setIsDocumentInitializing(false);
-        }, 100);
-      } else if (docGenerationError) {
-        console.log("Document generation error, showing main UI anyway");
-        setIsInitialLoading(false);
-        setIsDocumentInitializing(false);
-      } else {
-        console.log("Still waiting for document generation...");
-        setIsInitialLoading(true);
-        if (!isDocumentInitializing) {
-          setIsDocumentInitializing(true);
-        }
-      }
-    } else {
-      // No drug name or document already loaded - show main UI
-      console.log("No drug name for generation or document already loaded, showing main UI");
-      setIsInitialLoading(false);
-      setIsDocumentInitializing(false);
-    }
+    // Simple loading state: only show loading if we're explicitly in a loading state
+    // The preloadSession effect handles setting loading states appropriately
   }, [isDocumentGenerated, docGenerationError, documentContent.length, drugName, docLoadAttempted, isDocumentInitializing]);
   
   // Effect to handle document initialization state
@@ -530,8 +502,8 @@ const SessionPage = () => {
   }, [isInitialLoading]);
 
   // Show loading screen when document is being generated for the first time
-  if ((drugName && !isDocumentGenerated && documentContent === "" && !docGenerationError) || 
-      isInitialLoading || isLoading || isSessionLoading) {
+  if (isInitialLoading || isLoading || isSessionLoading || 
+      (drugName && !isDocumentGenerated && documentContent === "" && !docGenerationError && !docLoadAttempted)) {
     return (
       <div className="flex items-center justify-center min-h-[80vh] bg-gray-50">
         <div className="text-center p-8 rounded-lg shadow-md bg-white">

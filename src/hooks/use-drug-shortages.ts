@@ -1,4 +1,3 @@
-
 import { useQuery } from "@tanstack/react-query";
 import {
   searchDrugShortages,
@@ -95,19 +94,20 @@ export const useDrugShortageSearch = (drugName: string, sessionId?: string) => {
         
         // Check if the error is due to missing credentials
         if (err.missingCredentials) {
-          toast.error("API credentials not configured. Using mock data.", {
+          toast.info("Using sample drug shortage data (API credentials not configured)", {
             id: "missing-credentials",
-            duration: 5000
+            duration: 3000
           });
         } else if (err.message && err.message.includes('404')) {
-          toast.error("The Drug Shortages Canada API may have changed. Using mock data.", {
+          toast.info("Using sample drug shortage data (API temporarily unavailable)", {
             id: errorId,
-            duration: 5000
+            duration: 3000
           });
         } else {
-          toast.error(`Error fetching drug shortage data: ${err.message || 'Unknown error'}. Using mock data.`, {
+          console.warn(`Error fetching drug shortage data: ${err.message || 'Unknown error'}. Using mock data.`);
+          toast.info("Using sample drug shortage data (API temporarily unavailable)", {
             id: errorId,
-            duration: 5000
+            duration: 3000
           });
         }
         
@@ -176,19 +176,20 @@ export const useDrugShortageReport = (
         const errorId = `report-error-${reportId}`;
         
         if (err.missingCredentials) {
-          toast.error("API credentials not configured. Using mock data.", {
+          toast.info("Using sample shortage report data (API credentials not configured)", {
             id: "missing-credentials",
-            duration: 5000
+            duration: 3000
           });
         } else if (err.message && err.message.includes('404')) {
-          toast.error("The Drug Shortages Canada API may have changed. Using mock data.", {
+          toast.info("Using sample shortage report data (API temporarily unavailable)", {
             id: errorId,
-            duration: 5000
+            duration: 3000
           });
         } else {
-          toast.error(`Error fetching drug shortage report: ${err.message || 'Unknown error'}. Using mock data.`, {
+          console.warn(`Error fetching drug shortage report: ${err.message || 'Unknown error'}. Using mock data.`);
+          toast.info("Using sample shortage report data (API temporarily unavailable)", {
             id: errorId,
-            duration: 5000
+            duration: 3000
           });
         }
         

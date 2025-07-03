@@ -3,8 +3,15 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
 // CORS headers to allow requests from the frontend
 const corsHeaders = {
+  // Allow requests from any origin (adjust to specific domain in production)
   'Access-Control-Allow-Origin': '*',
+  // Specify which headers can be used during the actual request
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  // IMPORTANT: Explicitly allow the HTTP methods that the browser may send in the
+  // Access-Control-Request-Method header of the pre-flight request. Without this
+  // header the pre-flight will fail with a generic CORS error and the main request
+  // will never reach the function.
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
 // Get API keys from the environment
@@ -30,7 +37,28 @@ serve(async (req) => {
   
   try {
     // Parse the request first to get model type
-    const requestBody = await req.json();
+    console.log("Attempting to parse request body...");
+    let requestBody;
+    try {
+      const rawBody = await req.text();
+      console.log("Raw request body length:", rawBody.length);
+      console.log("Raw request body start:", rawBody.substring(0, 200));
+      requestBody = JSON.parse(rawBody);
+      console.log("Request body parsed successfully");
+    } catch (parseError) {
+      console.error("JSON parsing error:", parseError);
+      return new Response(
+        JSON.stringify({ 
+          error: "Invalid JSON in request body", 
+          details: parseError.message 
+        }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, "Content-Type": "application/json" } 
+        }
+      );
+    }
+    
     const { 
       assistantType,
       modelType = "openai", // Default to OpenAI for backward compatibility
@@ -419,11 +447,11 @@ Fill every section with detailed, actionable clinical information. Make it compr
     const allMessages = messages ? [...messages] : [];
 
     if (generateDocument) {
-      // For initial document generation, the chat message is a simple confirmation
+      // For initial document generation, include the actual document content in the chat
       allMessages.push({
         id: `txagent_${Date.now()}`,
-        role: "assistant",
-        content: "I've generated a comprehensive drug shortage document. You can now ask me to make changes or explain any part of it.",
+        role: "assistant", 
+        content: messageContent, // This contains the actual generated document
         timestamp: Date.now(),
         model: 'txagent'
       });

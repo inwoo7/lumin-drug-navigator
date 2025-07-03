@@ -235,7 +235,6 @@ Format the document in Markdown with clear headings and sections.`;
             allShortageData: allShortageData || [],
             sessionId,
             generateDocument: true,
-            rawData: shouldSendRawData, // Only send raw data for new document generations
             drugName // NEW: Pass drug name for cases without API data
           },
         });
@@ -270,25 +269,33 @@ Format the document in Markdown with clear headings and sections.`;
           console.warn("Document update callback missing or no message content received");
         }
         
-        // Update the chat with a confirmation message instead of showing system instructions
+        // For document generation, show a friendly completion message instead of the raw prompt/response
         const completionMessage = {
           id: Date.now().toString(),
           role: "assistant" as const,
-          content: "I've generated a document based on the drug shortage data. You can now ask me to make changes or explain any part of it.",
+          content: `✅ I've successfully generated a comprehensive drug shortage management plan for ${drugShortageData?.brand_name || drugShortageData?.drug_name || drugName}. The document has been created with detailed clinical guidance, therapeutic alternatives, and implementation strategies. You can view the full document in the editor on the right, or ask me questions about any specific section.`,
           timestamp: new Date(),
+          model: currentModel
         };
-        
-        // Replace the placeholder message with the completion message
         setMessages([completionMessage]);
         
         // Save this conversation to the database
         if (sessionId && data.threadId) {
           try {
+            // Save the friendly completion message instead of the raw TxAgent data
+            const messagesToSave = [{
+              id: completionMessage.id,
+              role: completionMessage.role,
+              content: completionMessage.content,
+              timestamp: completionMessage.timestamp.getTime(),
+              model: completionMessage.model
+            }];
+            
             await supabase.rpc('save_ai_conversation', {
               p_session_id: sessionId,
               p_assistant_type: assistantType,
               p_thread_id: data.threadId,
-              p_messages: JSON.stringify([completionMessage])
+              p_messages: JSON.stringify(messagesToSave)
             });
             console.log("Saved conversation to database");
           } catch (saveErr) {
@@ -644,7 +651,6 @@ Format the document in Markdown with clear headings and sections.`;
             content: m.content,
             timestamp: m.timestamp.toISOString() // Store as ISO string
         }))),
-        p_model_type: currentModel // Include the current model type
       };
       console.log("Payload for save_ai_conversation:", payload);
 
