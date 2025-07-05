@@ -1,0 +1,14 @@
+name: Supabase Document Worker
+
+on:
+  schedule:
+    - cron: '*/1 * * * *'  # every 1 minute (GitHub Actions minimum interval)
+  workflow_dispatch:
+
+jobs:
+  call-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Supabase process-doc-jobs
+        run: |
+          curl -X POST https://oeazqjeopkepqynrqsxj.supabase.co/functions/v1/process-doc-jobs 
