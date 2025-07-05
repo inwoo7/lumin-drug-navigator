@@ -11,4 +11,6 @@ jobs:
     steps:
       - name: Call Supabase process-doc-jobs
         run: |
-          curl -X POST https://oeazqjeopkepqynrqsxj.supabase.co/functions/v1/process-doc-jobs 
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            https://oeazqjeopkepqynrqsxj.supabase.co/functions/v1/process-doc-jobs 
