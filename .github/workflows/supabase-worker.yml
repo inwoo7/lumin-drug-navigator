@@ -2,7 +2,7 @@ name: Supabase Document Worker
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # every 5 minutes (more reliable than 1 minute)
+    - cron: '3,10,17,24,31,38,45,52,59 * * * *'  # every 7 minutes with offset to avoid high load
   workflow_dispatch:
 
 jobs:
