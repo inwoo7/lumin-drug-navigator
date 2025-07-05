@@ -102,9 +102,9 @@ const SessionPage = () => {
     drugShortageData: selectedReportData,
     documentContent,
     drugName, // Pass drug name to allow generation without API data
-    // REMOVE API DEPENDENCY: Always auto-initialize and generate document when we have a drug name and no existing document
-    autoInitialize: !!drugName && documentContent === "" && !docLoadAttempted,
-    generateDocument: !!drugName && documentContent === "" && !docLoadAttempted,
+    // CRITICAL: Only auto-initialize and generate when we have sessionId AND drug name
+    autoInitialize: !!sessionId && !!drugName && documentContent === "" && !docLoadAttempted,
+    generateDocument: !!sessionId && !!drugName && documentContent === "" && !docLoadAttempted,
     modelType: "txagent", // Use TxAgent for initial document generation
     sharedThreadId: sharedThreadId, // Share thread with shortage assistant
     onThreadIdUpdate: (threadId) => {
@@ -159,22 +159,23 @@ const SessionPage = () => {
   
   // Set initialization attempt flag when conditions are right
   useEffect(() => {
-    if (!!drugName && !isDocumentGenerated && !docLoadAttempted && documentContent === "") {
+    if (!!sessionId && !!drugName && !isDocumentGenerated && !docLoadAttempted && documentContent === "") {
       hasAttemptedDocInit.current = true;
     }
-  }, [drugName, isDocumentGenerated, docLoadAttempted, documentContent]);
+  }, [sessionId, drugName, isDocumentGenerated, docLoadAttempted, documentContent]);
 
   // Debug logging for document generation conditions
   useEffect(() => {
     console.log("Document generation debug:");
     console.log("- drugName:", drugName);
+    console.log("- sessionId:", !!sessionId);
     console.log("- selectedReportData:", !!selectedReportData, selectedReportData?.brand_name);
     console.log("- documentContent length:", documentContent.length);
-    console.log("- autoInitialize condition:", !!drugName && documentContent === "" && !docLoadAttempted);
-    console.log("- generateDocument condition:", !!drugName && documentContent === "" && !docLoadAttempted);
+    console.log("- autoInitialize condition:", !!sessionId && !!drugName && documentContent === "" && !docLoadAttempted);
+    console.log("- generateDocument condition:", !!sessionId && !!drugName && documentContent === "" && !docLoadAttempted);
     console.log("- should show loading screen:", (drugName && !isDocumentGenerated && documentContent === "" && !docGenerationError));
     console.log("- API dependency removed: Document will generate with drugName only");
-  }, [drugName, selectedReportData, documentContent, isDocumentGenerated, docGenerationError, docLoadAttempted]);
+  }, [sessionId, drugName, selectedReportData, documentContent, isDocumentGenerated, docGenerationError, docLoadAttempted]);
 
   // Initialize the Info AI Assistant to track when it's ready - but don't auto-generate reports
   // IMPORTANT: Use the same sessionId so both assistants can share the same thread
@@ -223,7 +224,7 @@ const SessionPage = () => {
             p_assistant_type: "document" 
           })
         ]);
-        
+          
         const hasExistingDocument = existingDocResponse.data && 
                                    existingDocResponse.data.length > 0 && 
                                    existingDocResponse.data[0]?.content;

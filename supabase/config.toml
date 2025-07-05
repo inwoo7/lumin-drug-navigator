@@ -2,8 +2,3 @@ project_id = "oeazqjeopkepqynrqsxj"
 
 [functions.openai-assistant]
 verify_jwt = true
-
-[functions.openai-assistant.cors]
-allowed_origins = ["http://localhost:8080", "https://localhost:8080", "*"]
-allowed_headers = ["authorization", "x-client-info", "apikey", "content-type"]
-allowed_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]

@@ -2,7 +2,7 @@ name: Supabase Document Worker
 
 on:
   schedule:
-    - cron: '*/1 * * * *'  # every 1 minute (GitHub Actions minimum interval)
+    - cron: '*/5 * * * *'  # every 5 minutes (more reliable than 1 minute)
   workflow_dispatch:
 
 jobs:
@@ -11,6 +11,21 @@ jobs:
     steps:
       - name: Call Supabase process-doc-jobs
         run: |
-          curl -X POST \
+          echo "Processing document generation jobs..."
+          response=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            https://oeazqjeopkepqynrqsxj.supabase.co/functions/v1/process-doc-jobs 
+            -H "Content-Type: application/json" \
+            https://oeazqjeopkepqynrqsxj.supabase.co/functions/v1/process-doc-jobs)
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n -1)
+          
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+          
+          if [ "$http_code" -ne 200 ]; then
+            echo "Error: Worker function returned status $http_code"
+            exit 1
+          fi
+          
+          echo "Document processing completed successfully" 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { AIConversation } from "@/types/supabase-rpc";
@@ -62,6 +62,10 @@ export const useOpenAIAssistant = ({
     openai: [],
     txagent: []
   });
+  
+  // Refs to store cleanup functions
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const channelRef = useRef<any>(null);
 
   const watermark = "\n\n*Powered by MaaTRx*";
 
@@ -153,7 +157,7 @@ export const useOpenAIAssistant = ({
     loadConversation();
   }, [sessionId, assistantType]);
 
-  // This effect triggers document generation when drug data is available
+  // This effect handles document generation
   useEffect(() => {
     if (isRestoredSession) {
       console.log(`[document] Skipping document generation because session was restored.`);
@@ -162,169 +166,263 @@ export const useOpenAIAssistant = ({
     }
 
     const generateDocumentFromData = async () => {
-      // REMOVE API DEPENDENCY: Allow generation with drug name even without API data
-      const hasDrugInfo = drugShortageData || drugName;
-      
-      if (
-        assistantType !== "document" || 
-        !generateDocument || 
-        !hasDrugInfo || 
-        hasAttemptedGeneration || 
-        !sessionId ||
-        isLoading ||
-        (documentContent && documentContent.length > 0)
-      ) {
-        if (assistantType === "document" && !isInitialized && !isLoading && !isRestoredSession) {
-          console.log("Document assistant not generating document but marking as initialized");
-          console.log(`Debug - generateDocument: ${generateDocument}, hasDrugInfo: ${!!hasDrugInfo}, hasAttemptedGeneration: ${hasAttemptedGeneration}, sessionId: ${!!sessionId}, documentContent length: ${documentContent?.length || 0}`);
-          setIsInitialized(true);
-          if (onStateChange) {
-            onStateChange({ isInitialized: true, isLoading: false });
-          }
+      if (assistantType !== "document" || !generateDocument || hasAttemptedGeneration || isLoading) {
+        console.log("Document assistant not generating document but marking as initialized");
+        console.log("Debug - generateDocument:", generateDocument, "hasDrugInfo:", !!drugShortageData, "hasAttemptedGeneration:", hasAttemptedGeneration, "sessionId:", !!sessionId, "documentContent length:", documentContent?.length || 0);
+        if (!isInitialized) setIsInitialized(true);
+        return;
+      }
+
+      // CRITICAL: Don't generate document without a sessionId
+      if (!sessionId) {
+        console.log("Document generation skipped - no sessionId available yet");
+        return;
+      }
+
+      // If we have document content already, don't regenerate
+      if (documentContent && documentContent.trim().length > 0) {
+        console.log(`[document] Document content already exists, not regenerating. Content length: ${documentContent.length}`);
+        setIsInitialized(true);
+        if (onStateChange) {
+          onStateChange({ isInitialized: true, isLoading: false });
         }
         return;
       }
-      
-      console.log("[document] Starting document generation from drug data (not a restored session).");
-      console.log(`Debug - All conditions met for generation. drugShortageData: ${!!drugShortageData}, drugName: ${drugName}`);
-      setHasAttemptedGeneration(true);
-      setIsLoading(true);
-      
-      if (onStateChange) {
-        onStateChange({ isInitialized: false, isLoading: true });
+
+      // If we're trying to load an existing conversation, skip document generation
+      if (sessionId && !isInitialized && !hasAttemptedGeneration) {
+        try {
+          console.log(`[document] Attempting to load conversation for session ${sessionId}`);
+          
+          const { data: existingConversation } = await supabase
+            .rpc('get_ai_conversation', { 
+              p_session_id: sessionId, 
+              p_assistant_type: assistantType 
+            });
+            
+          if (existingConversation && existingConversation.length > 0 && existingConversation[0].messages) {
+            console.log("Found existing conversation, using that instead of generating new content");
+            
+            setIsRestoredSession(true);
+            setHasAttemptedGeneration(true);
+            
+            let existingMessages;
+            if (typeof existingConversation[0].messages === 'string') {
+              try {
+                existingMessages = JSON.parse(existingConversation[0].messages);
+              } catch (e) {
+                existingMessages = [];
+              }
+            } else if (Array.isArray(existingConversation[0].messages)) {
+              existingMessages = existingConversation[0].messages;
+            }
+            
+            if (existingMessages && existingMessages.length > 0) {
+              const formattedMessages = existingMessages.map((msg: any) => ({
+                id: msg.id || Date.now().toString(),
+                role: msg.role as "user" | "assistant",
+                content: msg.content,
+                timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
+              }));
+              
+              setMessages(formattedMessages);
+              if (existingConversation[0].thread_id) {
+                setThreadId(existingConversation[0].thread_id);
+              }
+            }
+            
+            setIsInitialized(true);
+            if (onStateChange) {
+              onStateChange({ isInitialized: true, isLoading: false });
+            }
+            return;
+          }
+        } catch (err) {
+          console.error("Error checking for existing conversations:", err);
+        }
       }
+
+      // No existing conversation found, generate new document
+      console.log(`[document] No conversation found for session ${sessionId}`);
       
+      setIsLoading(true);
+      setHasAttemptedGeneration(true);
+      setError(null);
+
       try {
-        // We'll use a simplified message for the UI instead of showing the actual prompt
-        const initialMessage = {
-          id: Date.now().toString(),
-          role: "assistant" as const,
-          content: "I'm analyzing the drug shortage data to create a comprehensive management plan...",
-          timestamp: new Date(),
-        };
-        
-        // Add a placeholder message while we wait
-        setMessages([initialMessage]);
-        
-        // Generate the document
-        const generationPrompt = `Generate a comprehensive drug shortage management plan for ${drugShortageData?.brand_name || drugShortageData?.drug_name || drugName || 'the requested drug'}. 
-Include the following sections:
-1. Executive Summary - Overview of the shortage situation
-2. Product Details - Information about the affected medication
-3. Shortage Impact Assessment - How this affects patient care
-4. Therapeutic Alternatives - Available alternatives with dosing information
-5. Conservation Strategies - How to manage limited supply
-6. Patient Prioritization - Criteria for allocation if needed
-7. Implementation Plan - Steps for implementing the management plan
-8. Communication Strategy - How to communicate with staff and patients
+        console.log(`[document] Starting document generation from drug data (not a restored session).`);
+        console.log("Debug - All conditions met for generation. drugShortageData:", !!drugShortageData, "drugName:", drugName);
 
-Use the complete drug shortage data to create a professional, detailed, and actionable document. 
-Include evidence-based recommendations where possible.
-Format the document in Markdown with clear headings and sections.`;
+        // Clean up any existing polling or subscription
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
+        if (channelRef.current) {
+          channelRef.current.unsubscribe();
+          channelRef.current = null;
+        }
 
-        console.log("Calling OpenAI assistant function to generate document");
-        const { data, error } = await supabase.functions.invoke("openai-assistant", {
-          body: {
-            assistantType: "document",
-            modelType: currentModel,
-            messages: [{
-              role: "user",
-              content: generationPrompt
-            }],
-            drugData: drugShortageData,
-            allShortageData: allShortageData || [],
-            sessionId,
-            generateDocument: true,
-            drugName // NEW: Pass drug name for cases without API data
+        const watermark = "\n\n---\n*Generated by TxAgent - Advanced Clinical Decision Support*";
+        
+        console.log("Enqueuing document generation job via Edge Function");
+        
+        const response = await fetch(`${supabase.supabaseUrl}/functions/v1/enqueue-doc`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabase.supabaseKey}`,
           },
+          body: JSON.stringify({
+            sessionId,
+            drugName: drugShortageData?.drug_name || drugShortageData?.brand_name || drugName,
+            drugData: drugShortageData || { drug_name: drugName },
+          }),
         });
-        
-        if (error) {
-          console.error("Error generating document:", error);
-          toast.error("Error generating document. Please try again later.");
-          setIsLoading(false);
-          return;
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error("Enqueue-doc error response:", errorText);
+          throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
         }
+
+        const data = await response.json();
+        const jobId = data.jobId as string;
+        console.log("Job enqueued with ID", jobId);
+
+        // Subscribe to job updates
+        const channel = supabase.channel(`doc_job_${jobId}`)
+          .on(
+            "postgres_changes",
+            { event: "UPDATE", schema: "public", table: "document_generation_jobs", filter: `id=eq.${jobId}` },
+            (payload) => {
+              const newStatus = (payload.new as any).status;
+              console.log("Job status update", newStatus);
+              if (newStatus === "completed") {
+                const content = (payload.new as any).result as string;
+                if (onDocumentUpdate) {
+                  onDocumentUpdate(content + watermark);
+                }
+                setIsLoading(false);
+                setIsInitialized(true);
+                
+                // Clean up
+                if (channelRef.current) {
+                  channelRef.current.unsubscribe();
+                  channelRef.current = null;
+                }
+                if (pollIntervalRef.current) {
+                  clearInterval(pollIntervalRef.current);
+                  pollIntervalRef.current = null;
+                }
+                
+                if (onStateChange) {
+                  onStateChange({ isInitialized: true, isLoading: false });
+                }
+              } else if (newStatus === "failed") {
+                toast.error("Document generation failed. Please retry later.");
+                setIsLoading(false);
+                
+                // Clean up
+                if (channelRef.current) {
+                  channelRef.current.unsubscribe();
+                  channelRef.current = null;
+                }
+                if (pollIntervalRef.current) {
+                  clearInterval(pollIntervalRef.current);
+                  pollIntervalRef.current = null;
+                }
+              }
+            }
+          )
+          .subscribe();
         
-        if (data.error) {
-          console.error("Error from document generation:", data.error);
-          toast.error("Error generating document: " + data.error);
-          setIsLoading(false);
-          return;
-        }
+        channelRef.current = channel;
         
-        console.log("Document generation successful, received response");
+        // Fallback polling in case realtime not enabled
+        const pollInterval = setInterval(async () => {
+          try {
+            const { data: jobRow } = await supabase.from('document_generation_jobs').select('status,result').eq('id', jobId).single();
+            if (jobRow?.status === 'completed') {
+              if (onDocumentUpdate) onDocumentUpdate((jobRow.result as string) + watermark);
+              setIsLoading(false);
+              setIsInitialized(true);
+              
+              // Clean up
+              if (channelRef.current) {
+                channelRef.current.unsubscribe();
+                channelRef.current = null;
+              }
+              if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+                pollIntervalRef.current = null;
+              }
+              
+              if (onStateChange) onStateChange({ isInitialized: true, isLoading: false });
+            } else if (jobRow?.status === 'failed') {
+              toast.error('Document generation failed.');
+              setIsLoading(false);
+              
+              // Clean up
+              if (channelRef.current) {
+                channelRef.current.unsubscribe();
+                channelRef.current = null;
+              }
+              if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+                pollIntervalRef.current = null;
+              }
+            }
+          } catch (error) {
+            console.error('Error polling job status:', error);
+          }
+        }, 10000);
+         
+        pollIntervalRef.current = pollInterval;
         
-        // Set thread ID for future messages
-        if (data.threadId) {
-          setThreadId(data.threadId);
-          console.log("Thread ID set:", data.threadId);
-        }
-        
-        // Update document via callback
-        if (onDocumentUpdate && data.message) {
-          console.log("Calling onDocumentUpdate with document content");
-          onDocumentUpdate(data.message + watermark);
-        } else {
-          console.warn("Document update callback missing or no message content received");
-        }
-        
-        // For document generation, show a friendly completion message instead of the raw prompt/response
-        const completionMessage = {
+        // Show queued message
+        const queuedMessage = {
           id: Date.now().toString(),
           role: "assistant" as const,
-          content: `✅ I've successfully generated a comprehensive drug shortage management plan for ${drugShortageData?.brand_name || drugShortageData?.drug_name || drugName}. The document has been created with detailed clinical guidance, therapeutic alternatives, and implementation strategies. You can view the full document in the editor on the right, or ask me questions about any specific section.`,
+          content: `📋 I've queued up the generation of a comprehensive management plan for ${drugShortageData?.brand_name || drugShortageData?.drug_name || drugName}. I'll let you know as soon as it's ready!`,
           timestamp: new Date(),
           model: currentModel
         };
-        setMessages([completionMessage]);
-        
-        // Save this conversation to the database
-        if (sessionId && data.threadId) {
-          try {
-            // Save the friendly completion message instead of the raw TxAgent data
-            const messagesToSave = [{
-              id: completionMessage.id,
-              role: completionMessage.role,
-              content: completionMessage.content,
-              timestamp: completionMessage.timestamp.getTime(),
-              model: completionMessage.model
-            }];
-            
-            await supabase.rpc('save_ai_conversation', {
-              p_session_id: sessionId,
-              p_assistant_type: assistantType,
-              p_thread_id: data.threadId,
-              p_messages: JSON.stringify(messagesToSave)
-            });
-            console.log("Saved conversation to database");
-          } catch (saveErr) {
-            console.error("Error saving conversation:", saveErr);
-          }
-        }
-        
+        setMessages([queuedMessage]);
+         
         // After first generation, we don't need to send raw data anymore
         setShouldSendRawData(false);
         setIsInitialized(true);
         
         if (onStateChange) {
-          onStateChange({ isInitialized: true, isLoading: false });
+          onStateChange({ isInitialized: true, isLoading: true }); // Keep loading true while job processes
         }
       } catch (err: any) {
         console.error("Error generating document:", err);
         setError(err.message || "An error occurred");
         toast.error("Error generating document. Please try again later.");
+        setIsLoading(false);
         if (onStateChange) {
           onStateChange({ isInitialized: false, isLoading: false });
         }
-      } finally {
-        setIsLoading(false);
       }
     };
     
     if (assistantType === "document") {
       generateDocumentFromData();
     }
+
+    // Cleanup function
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+      if (channelRef.current) {
+        channelRef.current.unsubscribe();
+        channelRef.current = null;
+      }
+    };
   }, [
     assistantType, 
     generateDocument, 
