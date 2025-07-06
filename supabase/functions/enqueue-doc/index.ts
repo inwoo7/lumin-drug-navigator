@@ -72,38 +72,6 @@ serve(async (req: Request) => {
       );
     }
 
-    // Trigger GitHub Actions workflow immediately after job creation
-    try {
-      const githubToken = Deno.env.get("GITHUB_TOKEN");
-      if (githubToken) {
-        console.log(`Triggering GitHub Actions workflow for job ${data.id}`);
-        
-        const workflowResponse = await fetch(
-          "https://api.github.com/repos/inwoo7/lumin-drug-navigator/actions/workflows/supabase-worker.yml/dispatches",
-          {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${githubToken}`,
-              "Accept": "application/vnd.github.v3+json",
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ ref: "main" }),
-          }
-        );
-
-        if (workflowResponse.ok) {
-          console.log(`Successfully triggered workflow for job ${data.id}`);
-        } else {
-          console.error(`Failed to trigger workflow: ${workflowResponse.status}`);
-        }
-      } else {
-        console.log("GITHUB_TOKEN not available, skipping workflow trigger");
-      }
-    } catch (triggerError) {
-      console.error("Error triggering workflow:", triggerError);
-      // Don't fail the job creation if workflow trigger fails
-    }
-
     return new Response(
       JSON.stringify({ jobId: data.id, status: data.status }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },

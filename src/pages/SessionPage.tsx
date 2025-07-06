@@ -489,7 +489,7 @@ const SessionPage = () => {
 
   // Add a timeout to prevent getting stuck on loading screen
   useEffect(() => {
-    // Force show the interface after 20 seconds even if assistants aren't ready
+    // Force show the interface after 120 seconds even if assistants aren't ready
     const loadingTimeout = setTimeout(() => {
       if (isInitialLoading) {
         console.log("Loading timeout reached - forcing UI display");
@@ -497,7 +497,7 @@ const SessionPage = () => {
         setIsInfoAssistantReady(true);
         setIsDocumentAssistantReady(true);
       }
-    }, 20000); // 20 second timeout
+    }, 120000); // 120 second timeout (2 minutes)
     
     return () => clearTimeout(loadingTimeout);
   }, [isInitialLoading]);
@@ -512,7 +512,7 @@ const SessionPage = () => {
           <h2 className="text-2xl font-semibold text-gray-700 mb-2">Generating Document</h2>
           <p className="text-gray-500 mb-4">Advanced Clinical Model is creating a comprehensive shortage management plan for {formatDrugNameForDisplay(drugName || "this drug")}</p>
           <div className="bg-blue-50 p-3 rounded-md">
-            <p className="text-sm text-blue-600">This may take 15-30 seconds as our specialized medical AI analyzes the data</p>
+            <p className="text-sm text-blue-600">This may take 30-90 seconds as our specialized medical AI analyzes the data</p>
           </div>
         </div>
       </div>
