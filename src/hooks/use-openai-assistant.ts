@@ -343,6 +343,7 @@ export const useOpenAIAssistant = ({
         channelRef.current = channel;
         
         // More aggressive polling - check every 5 seconds instead of 10
+        console.log(`Setting up polling for job ${jobId}...`);
         const pollInterval = setInterval(async () => {
           try {
             console.log(`Polling job ${jobId} for status...`);
@@ -394,6 +395,22 @@ export const useOpenAIAssistant = ({
         }, 5000); // Poll every 5 seconds instead of 10
          
         pollIntervalRef.current = pollInterval;
+        
+        // Start first poll immediately
+        console.log(`Starting immediate first poll for job ${jobId}...`);
+        setTimeout(async () => {
+          try {
+            console.log(`First poll for job ${jobId}...`);
+            const { data: jobRow, error } = await (supabase as any).from('document_generation_jobs').select('status,result').eq('id', jobId).single();
+            if (error) {
+              console.error('Error in first poll:', error);
+            } else {
+              console.log(`First poll result - Job ${jobId} status:`, jobRow?.status);
+            }
+          } catch (error) {
+            console.error('Error in first poll:', error);
+          }
+        }, 2000); // First poll after 2 seconds
         
         // Show queued message
         const queuedMessage = {
