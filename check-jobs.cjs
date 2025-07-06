@@ -1,14 +1,9 @@
-import { createClient } from '@supabase/supabase-js';
+const { createClient } = require('@supabase/supabase-js');
 
 async function checkJobs() {
   const supabaseUrl = 'https://oeazqjeopkepqynrqsxj.supabase.co';
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lYXpxamVvcGtlcHF5bnJxc3hqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNzE5NzQ3MSwiZXhwIjoyMDUyNzczNDcxfQ.mzYdvCPF8XYjJoOWqZNFQfUJLNzU7zSZvLdJfGYHXSo';
   
-  if (!serviceRoleKey) {
-    console.error('❌ SUPABASE_SERVICE_ROLE_KEY environment variable is required');
-    return;
-  }
-
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
   try {
@@ -17,7 +12,7 @@ async function checkJobs() {
       .from('document_generation_jobs')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(5);
+      .limit(10);
     
     if (error) throw error;
     
@@ -36,6 +31,7 @@ async function checkJobs() {
       }
       if (job.result) {
         console.log(`   Result length: ${job.result.length} characters`);
+        console.log(`   Result preview: ${job.result.substring(0, 100)}...`);
       }
       console.log('   ---');
     });
@@ -66,6 +62,7 @@ async function checkJobs() {
         console.log(`   Updated: ${new Date(jobData.updated_at).toLocaleString()}`);
         if (jobData.result) {
           console.log(`   Has result: ${jobData.result.length} characters`);
+          console.log(`   Result preview: ${jobData.result.substring(0, 100)}...`);
         }
       }
     }

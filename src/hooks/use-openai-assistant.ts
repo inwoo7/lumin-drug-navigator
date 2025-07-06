@@ -267,11 +267,11 @@ export const useOpenAIAssistant = ({
         
         console.log("Enqueuing document generation job via Edge Function");
         
-        const response = await fetch(`${supabase.supabaseUrl}/functions/v1/enqueue-doc`, {
+        const response = await fetch(`https://oeazqjeopkepqynrqsxj.supabase.co/functions/v1/enqueue-doc`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabase.supabaseKey}`,
+            'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lYXpxamVvcGtlcHF5bnJxc3hqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ4NTg0MzEsImV4cCI6MjA2MDQzNDQzMX0.ay49GPHeEl_HuGyka08mB857hxRrojIJbkcsa8r-tKw'}`,
           },
           body: JSON.stringify({
             sessionId,
@@ -296,6 +296,7 @@ export const useOpenAIAssistant = ({
             "postgres_changes",
             { event: "UPDATE", schema: "public", table: "document_generation_jobs", filter: `id=eq.${jobId}` },
             (payload) => {
+              console.log("Real-time job update received:", payload);
               const newStatus = (payload.new as any).status;
               console.log("Job status update", newStatus);
               if (newStatus === "completed") {
@@ -335,15 +336,28 @@ export const useOpenAIAssistant = ({
               }
             }
           )
-          .subscribe();
+          .subscribe((status) => {
+            console.log("Real-time subscription status:", status);
+          });
         
         channelRef.current = channel;
         
-        // Fallback polling in case realtime not enabled
+        // More aggressive polling - check every 5 seconds instead of 10
         const pollInterval = setInterval(async () => {
           try {
-            const { data: jobRow } = await supabase.from('document_generation_jobs').select('status,result').eq('id', jobId).single();
+            console.log(`Polling job ${jobId} for status...`);
+            // Use direct query with type casting
+            const { data: jobRow, error } = await (supabase as any).from('document_generation_jobs').select('status,result').eq('id', jobId).single();
+            
+            if (error) {
+              console.error('Error polling job:', error);
+              return;
+            }
+            
+            console.log(`Job ${jobId} status:`, jobRow?.status);
+            
             if (jobRow?.status === 'completed') {
+              console.log(`Job ${jobId} completed! Result length:`, jobRow.result?.length);
               if (onDocumentUpdate) onDocumentUpdate((jobRow.result as string) + watermark);
               setIsLoading(false);
               setIsInitialized(true);
@@ -360,6 +374,7 @@ export const useOpenAIAssistant = ({
               
               if (onStateChange) onStateChange({ isInitialized: true, isLoading: false });
             } else if (jobRow?.status === 'failed') {
+              console.error(`Job ${jobId} failed`);
               toast.error('Document generation failed.');
               setIsLoading(false);
               
@@ -376,7 +391,7 @@ export const useOpenAIAssistant = ({
           } catch (error) {
             console.error('Error polling job status:', error);
           }
-        }, 10000);
+        }, 5000); // Poll every 5 seconds instead of 10
          
         pollIntervalRef.current = pollInterval;
         
