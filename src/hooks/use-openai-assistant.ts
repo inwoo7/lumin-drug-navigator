@@ -49,6 +49,7 @@ export const useOpenAIAssistant = ({
   onThreadIdUpdate,
   drugName,
 }: UseOpenAIAssistantProps) => {
+  // All useState hooks must be called in the same order every time
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,12 +63,30 @@ export const useOpenAIAssistant = ({
     openai: [],
     txagent: []
   });
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   
-  // Refs to store cleanup functions
+  // All useRef hooks must be called in the same order every time
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const channelRef = useRef<any>(null);
 
   const watermark = "\n\n*Powered by MaaTRx*";
+  
+  // Global tracking to prevent duplicate polling
+  const globalPollingKey = `polling_${sessionId}_${assistantType}`;
+  
+  // Check if we're already polling for this session/assistant
+  const isAlreadyPolling = () => {
+    return window[globalPollingKey] === currentJobId && currentJobId !== null;
+  };
+  
+  // Set global polling tracker
+  const setGlobalPolling = (jobId: string | null) => {
+    if (jobId) {
+      window[globalPollingKey] = jobId;
+    } else {
+      delete window[globalPollingKey];
+    }
+  };
 
   // Load existing conversation from database
   useEffect(() => {
@@ -166,9 +185,9 @@ export const useOpenAIAssistant = ({
     }
 
     const generateDocumentFromData = async () => {
-      if (assistantType !== "document" || !generateDocument || hasAttemptedGeneration || isLoading) {
-        console.log("Document assistant not generating document but marking as initialized");
-        console.log("Debug - generateDocument:", generateDocument, "hasDrugInfo:", !!drugShortageData, "hasAttemptedGeneration:", hasAttemptedGeneration, "sessionId:", !!sessionId, "documentContent length:", documentContent?.length || 0);
+      if (assistantType !== "document" || !generateDocument || hasAttemptedGeneration || isLoading || currentJobId) {
+          console.log("Document assistant not generating document but marking as initialized");
+        console.log("Debug - generateDocument:", generateDocument, "hasDrugInfo:", !!drugShortageData, "hasAttemptedGeneration:", hasAttemptedGeneration, "sessionId:", !!sessionId, "documentContent length:", documentContent?.length || 0, "currentJobId:", currentJobId);
         if (!isInitialized) setIsInitialized(true);
         return;
       }
@@ -182,13 +201,13 @@ export const useOpenAIAssistant = ({
       // If we have document content already, don't regenerate
       if (documentContent && documentContent.trim().length > 0) {
         console.log(`[document] Document content already exists, not regenerating. Content length: ${documentContent.length}`);
-        setIsInitialized(true);
-        if (onStateChange) {
-          onStateChange({ isInitialized: true, isLoading: false });
+          setIsInitialized(true);
+          if (onStateChange) {
+            onStateChange({ isInitialized: true, isLoading: false });
         }
         return;
       }
-
+      
       // If we're trying to load an existing conversation, skip document generation
       if (sessionId && !isInitialized && !hasAttemptedGeneration) {
         try {
@@ -204,7 +223,7 @@ export const useOpenAIAssistant = ({
             console.log("Found existing conversation, using that instead of generating new content");
             
             setIsRestoredSession(true);
-            setHasAttemptedGeneration(true);
+      setHasAttemptedGeneration(true);
             
             let existingMessages;
             if (typeof existingConversation[0].messages === 'string') {
@@ -232,7 +251,7 @@ export const useOpenAIAssistant = ({
             }
             
             setIsInitialized(true);
-            if (onStateChange) {
+      if (onStateChange) {
               onStateChange({ isInitialized: true, isLoading: false });
             }
             return;
@@ -289,23 +308,27 @@ export const useOpenAIAssistant = ({
         const data = await response.json();
         const jobId = data.jobId as string;
         console.log("Job enqueued with ID", jobId);
+        setCurrentJobId(jobId);
 
-        // Subscribe to job updates
+        // Subscribe to job updates (fallback to polling if real-time fails)
         const channel = supabase.channel(`doc_job_${jobId}`)
           .on(
             "postgres_changes",
             { event: "UPDATE", schema: "public", table: "document_generation_jobs", filter: `id=eq.${jobId}` },
             (payload) => {
-              console.log("Real-time job update received:", payload);
+              console.log("[REALTIME] Job update received:", payload);
               const newStatus = (payload.new as any).status;
-              console.log("Job status update", newStatus);
+              console.log("[REALTIME] Job status update", newStatus);
               if (newStatus === "completed") {
                 const content = (payload.new as any).result as string;
+                console.log("[REALTIME] Job completed via real-time, updating document...");
                 if (onDocumentUpdate) {
                   onDocumentUpdate(content + watermark);
                 }
                 setIsLoading(false);
                 setIsInitialized(true);
+                setCurrentJobId(null); // Clear job ID on completion
+                setGlobalPolling(null); // Clear global polling tracker
                 
                 // Clean up
                 if (channelRef.current) {
@@ -321,8 +344,11 @@ export const useOpenAIAssistant = ({
                   onStateChange({ isInitialized: true, isLoading: false });
                 }
               } else if (newStatus === "failed") {
+                console.error("[REALTIME] Job failed via real-time");
                 toast.error("Document generation failed. Please retry later.");
                 setIsLoading(false);
+                setCurrentJobId(null); // Clear job ID on failure
+                setGlobalPolling(null); // Clear global polling tracker
                 
                 // Clean up
                 if (channelRef.current) {
@@ -337,7 +363,10 @@ export const useOpenAIAssistant = ({
             }
           )
           .subscribe((status) => {
-            console.log("Real-time subscription status:", status);
+            console.log("[REALTIME] Subscription status:", status);
+            if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+              console.warn("[REALTIME] Real-time subscription failed, relying on polling mechanism");
+            }
           });
         
         channelRef.current = channel;
@@ -348,64 +377,115 @@ export const useOpenAIAssistant = ({
         // Create a robust polling function that won't be affected by component re-renders
         const pollJobStatus = async () => {
           try {
-            console.log(`Polling job ${jobId} for status...`);
+            console.log(`[POLL] Checking job ${jobId} status...`);
             // Use direct query with type casting
             const { data: jobRow, error } = await (supabase as any).from('document_generation_jobs').select('status,result').eq('id', jobId).single();
-            
-            if (error) {
-              console.error('Error polling job:', error);
+        
+        if (error) {
+              console.error('[POLL] Error polling job:', error);
               return false; // Continue polling
             }
             
-            console.log(`Job ${jobId} status:`, jobRow?.status);
+            console.log(`[POLL] Job ${jobId} status: ${jobRow?.status}`);
             
             if (jobRow?.status === 'completed') {
-              console.log(`Job ${jobId} completed! Result length:`, jobRow.result?.length);
-              if (onDocumentUpdate) onDocumentUpdate((jobRow.result as string) + watermark);
-              setIsLoading(false);
+              console.log(`[POLL] Job ${jobId} completed! Result length: ${jobRow.result?.length}`);
+              if (onDocumentUpdate) {
+                console.log(`[POLL] Calling onDocumentUpdate with result...`);
+                onDocumentUpdate((jobRow.result as string) + watermark);
+              }
+          setIsLoading(false);
               setIsInitialized(true);
+              setCurrentJobId(null); // Clear job ID on completion
+              setGlobalPolling(null); // Clear global polling tracker
               
-              if (onStateChange) onStateChange({ isInitialized: true, isLoading: false });
+              if (onStateChange) {
+                console.log(`[POLL] Calling onStateChange with completion...`);
+                onStateChange({ isInitialized: true, isLoading: false });
+              }
               return true; // Stop polling
             } else if (jobRow?.status === 'failed') {
-              console.error(`Job ${jobId} failed`);
+              console.error(`[POLL] Job ${jobId} failed`);
               toast.error('Document generation failed.');
               setIsLoading(false);
+              setCurrentJobId(null); // Clear job ID on failure
+              setGlobalPolling(null); // Clear global polling tracker
               return true; // Stop polling
             }
             
+            console.log(`[POLL] Job ${jobId} still ${jobRow?.status}, continuing to poll...`);
             return false; // Continue polling
           } catch (error) {
-            console.error('Error polling job status:', error);
+            console.error('[POLL] Error polling job status:', error);
             return false; // Continue polling
           }
         };
         
-        // Set up interval with better cleanup handling
-        const pollInterval = setInterval(async () => {
-          const shouldStop = await pollJobStatus();
-          if (shouldStop) {
-            console.log(`Stopping polling for job ${jobId} - job completed or failed`);
-            if (pollIntervalRef.current) {
-              clearInterval(pollIntervalRef.current);
-              pollIntervalRef.current = null;
+        // Create persistent polling that won't be cleared by re-renders
+        let pollCount = 0;
+        const maxPolls = 120; // Maximum 10 minutes of polling (120 * 5 seconds)
+        
+        const startPersistentPolling = () => {
+          console.log(`[POLL] Creating persistent polling for job ${jobId}...`);
+          
+          const pollInterval = setInterval(async () => {
+            pollCount++;
+            console.log(`[POLL] Interval tick #${pollCount} for job ${jobId}...`);
+            
+            if (pollCount > maxPolls) {
+              console.error(`[POLL] Maximum polling attempts reached for job ${jobId}`);
+              clearInterval(pollInterval);
+              toast.error('Document generation timed out. Please try again.');
+          setIsLoading(false);
+              setCurrentJobId(null); // Clear job ID on timeout
+              setGlobalPolling(null); // Clear global polling tracker
+          return;
+        }
+        
+            const shouldStop = await pollJobStatus();
+            if (shouldStop) {
+              console.log(`[POLL] Stopping polling for job ${jobId} - job completed or failed`);
+              clearInterval(pollInterval);
+              if (channelRef.current) {
+                channelRef.current.unsubscribe();
+                channelRef.current = null;
+              }
             }
-            if (channelRef.current) {
-              channelRef.current.unsubscribe();
-              channelRef.current = null;
-            }
+          }, 5000); // Poll every 5 seconds
+          
+          return pollInterval;
+        };
+        
+        // Check if we're already polling for this job globally
+        if (isAlreadyPolling()) {
+          console.log(`[POLL] Already polling for job ${jobId} globally, skipping setup`);
+          return;
+        }
+        
+        // Set global polling tracker
+        setGlobalPolling(jobId);
+        
+        // Only start polling if we don't already have an active interval for this job
+        if (!pollIntervalRef.current || currentJobId !== jobId) {
+          console.log(`[POLL] Starting new polling for job ${jobId}... (previous job: ${currentJobId})`);
+          
+          // Clear any existing interval first
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
           }
-        }, 5000); // Poll every 5 seconds
-         
-        pollIntervalRef.current = pollInterval;
+          
+          pollIntervalRef.current = startPersistentPolling();
+        } else {
+          console.log(`[POLL] Polling already active for job ${jobId}, skipping new interval setup`);
+        }
         
         // Start first poll immediately
-        console.log(`Starting immediate first poll for job ${jobId}...`);
+        console.log(`[POLL] Starting immediate first poll for job ${jobId}...`);
         setTimeout(async () => {
-          console.log(`First poll for job ${jobId}...`);
+          console.log(`[POLL] First poll for job ${jobId}...`);
           const shouldStop = await pollJobStatus();
           if (shouldStop) {
-            console.log(`Job ${jobId} completed in first poll!`);
+            console.log(`[POLL] Job ${jobId} completed in first poll!`);
             if (pollIntervalRef.current) {
               clearInterval(pollIntervalRef.current);
               pollIntervalRef.current = null;
@@ -421,12 +501,12 @@ export const useOpenAIAssistant = ({
         const queuedMessage = {
           id: Date.now().toString(),
           role: "assistant" as const,
-          content: `📋 I've queued up the generation of a comprehensive management plan for ${drugShortageData?.brand_name || drugShortageData?.drug_name || drugName}. I'll let you know as soon as it's ready!`,
+          content: `📋 I've generated a management plan for ${drugShortageData?.brand_name || drugShortageData?.drug_name || drugName}. Let me know if you would like me to make any changes or if you have any questions.`,
           timestamp: new Date(),
           model: currentModel
         };
         setMessages([queuedMessage]);
-         
+        
         // After first generation, we don't need to send raw data anymore
         setShouldSendRawData(false);
         setIsInitialized(true);
@@ -449,15 +529,16 @@ export const useOpenAIAssistant = ({
       generateDocumentFromData();
     }
 
-    // Cleanup function
+    // Cleanup function - only clean up if component is unmounting, not on re-renders
     return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
-      }
-      if (channelRef.current) {
+      // NEVER clean up polling intervals - they manage their own lifecycle
+      // Only clean up real-time subscriptions if no active job
+      if (currentJobId === null && channelRef.current) {
+        console.log('[REALTIME] Cleaning up real-time subscription');
         channelRef.current.unsubscribe();
         channelRef.current = null;
+      } else if (currentJobId !== null) {
+        console.log(`[POLL] Skipping cleanup - job ${currentJobId} still active`);
       }
     };
   }, [
@@ -473,7 +554,9 @@ export const useOpenAIAssistant = ({
     documentContent,
     shouldSendRawData,
     onStateChange,
-    isInitialized
+    isInitialized,
+    drugName,
+    currentJobId  // Add currentJobId to prevent duplicate job creation
   ]);
 
   // This effect handles loading drug data for the information assistant

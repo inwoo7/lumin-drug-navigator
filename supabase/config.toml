@@ -2,3 +2,7 @@ project_id = "oeazqjeopkepqynrqsxj"
 
 [functions.openai-assistant]
 verify_jwt = true
+
+[functions.process-doc-jobs]
+verify_jwt = false
+# Increase memory and CPU for document processing

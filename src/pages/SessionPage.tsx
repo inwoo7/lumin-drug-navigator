@@ -120,11 +120,13 @@ const SessionPage = () => {
       setDocumentContent(content);
       // Mark as generated if not already
       if (!isDocumentGenerated) {
+        console.log("SessionPage: Setting isDocumentGenerated to true");
         setIsDocumentGenerated(true);
         setIsDocumentInitializing(false);
       }
       // Mark assistant as ready if not already
        if (!isDocumentAssistantReady) {
+        console.log("SessionPage: Setting isDocumentAssistantReady to true");
         setIsDocumentAssistantReady(true);
        }
        // Save the updated document
@@ -132,6 +134,14 @@ const SessionPage = () => {
        
        // Ensure we don't try to load old document content after this
        setDocLoadAttempted(true);
+       
+       // Force initial loading to false to ensure UI updates
+       setIsInitialLoading(false);
+       
+       // CRITICAL: Clear any generation error since we successfully generated the document
+       setDocGenerationError(false);
+       
+       console.log("SessionPage: All states updated after document generation");
     },
     onStateChange: (state) => {
       // Mark document assistant ready when initialized
@@ -292,21 +302,9 @@ const SessionPage = () => {
     // The preloadSession effect handles setting loading states appropriately
   }, [isDocumentGenerated, docGenerationError, documentContent.length, drugName, docLoadAttempted, isDocumentInitializing]);
   
-  // Effect to handle document initialization state
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      // If initialization takes too long, assume there's an error
-      if (isDocumentInitializing && !isDocumentGenerated && !docGenerationError) {
-        setDocGenerationError(true);
-        setIsDocumentInitializing(false);
-        toast.error("Document generation timed out. Please try again.");
-      }
-    }, 25000); // 25 second timeout
-    
-    return () => clearTimeout(timeoutId);
-  }, [isDocumentInitializing, isDocumentGenerated, docGenerationError]);
+  // Effect to handle document initialization state has been removed
+  // The polling system in use-openai-assistant.ts now handles timeouts properly
   
-
   
   useEffect(() => {
     const initializeSession = async () => {
@@ -503,8 +501,22 @@ const SessionPage = () => {
   }, [isInitialLoading]);
 
   // Show loading screen when document is being generated for the first time
-  if (isInitialLoading || isLoading || isSessionLoading || 
-      (drugName && !isDocumentGenerated && documentContent === "" && !docGenerationError && !docLoadAttempted)) {
+  const shouldShowLoadingScreen = isInitialLoading || isLoading || isSessionLoading || 
+      (drugName && !isDocumentGenerated && documentContent === "" && !docGenerationError && !docLoadAttempted);
+  
+  // Debug the loading screen condition
+  console.log("Loading screen debug:");
+  console.log("- isInitialLoading:", isInitialLoading);
+  console.log("- isLoading:", isLoading);
+  console.log("- isSessionLoading:", isSessionLoading);
+  console.log("- drugName:", drugName);
+  console.log("- isDocumentGenerated:", isDocumentGenerated);
+  console.log("- documentContent length:", documentContent.length);
+  console.log("- docGenerationError:", docGenerationError);
+  console.log("- docLoadAttempted:", docLoadAttempted);
+  console.log("- shouldShowLoadingScreen:", shouldShowLoadingScreen);
+  
+  if (shouldShowLoadingScreen) {
     return (
       <div className="flex items-center justify-center min-h-[80vh] bg-gray-50">
         <div className="text-center p-8 rounded-lg shadow-md bg-white">

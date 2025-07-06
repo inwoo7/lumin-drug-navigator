@@ -9,6 +9,8 @@ const corsHeaders = {
 
 // Maximum TxAgent retries per job
 const MAX_ATTEMPTS = 3;
+// Memory threshold for processing (in MB)
+const MEMORY_THRESHOLD_MB = 100;
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -59,24 +61,40 @@ serve(async (req: Request) => {
       sessionId: job.session_id,
     };
 
-    console.log(`Processing job ${job.id} for drug: ${job.drug_name}`);
+    console.log(`Processing job ${job.id} for drug: ${job.drug_name} (attempt ${(job.attempts || 0) + 1})`);
 
-    const oaResp = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/openai-assistant`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")}`
-      },
-      body: JSON.stringify(payload),
-    });
+    // Add timeout to prevent hanging
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 minute timeout
 
-    if (!oaResp.ok) {
-      const errText = await oaResp.text();
-      throw new Error(`Assistant error (${oaResp.status}): ${errText}`);
+    let documentContent: string;
+    try {
+      const oaResp = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/openai-assistant`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")}`
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!oaResp.ok) {
+        const errText = await oaResp.text();
+        throw new Error(`Assistant error (${oaResp.status}): ${errText}`);
+      }
+
+      const oaData = await oaResp.json();
+      documentContent = oaData.message as string;
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      if (fetchError.name === 'AbortError') {
+        throw new Error('Document generation timed out after 5 minutes');
+      }
+      throw fetchError;
     }
-
-    const oaData = await oaResp.json();
-    const documentContent = oaData.message as string;
 
     if (!documentContent || documentContent.trim().length === 0) {
       throw new Error("Assistant returned empty document");
