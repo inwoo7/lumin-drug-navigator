@@ -271,7 +271,7 @@ export const useOpenAIAssistant = ({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lYXpxamVvcGtlcHF5bnJxc3hqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ4NTg0MzEsImV4cCI6MjA2MDQzNDQzMX0.ay49GPHeEl_HuGyka08mB857hxRrojIJbkcsa8r-tKw'}`,
+            'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lYXpxamVvcGtlcHF5bnJxc3hqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ4NTg0MzEsImV4cCI6MjA2MDQzNDQzMX0.ay49GPHeEl_HuGyka08mB857hxRrojIJbkcsa8r-tKw`,
           },
           body: JSON.stringify({
             sessionId,
