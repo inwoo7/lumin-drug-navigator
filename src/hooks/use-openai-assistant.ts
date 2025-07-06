@@ -344,7 +344,9 @@ export const useOpenAIAssistant = ({
         
         // More aggressive polling - check every 5 seconds instead of 10
         console.log(`Setting up polling for job ${jobId}...`);
-        const pollInterval = setInterval(async () => {
+        
+        // Create a robust polling function that won't be affected by component re-renders
+        const pollJobStatus = async () => {
           try {
             console.log(`Polling job ${jobId} for status...`);
             // Use direct query with type casting
@@ -352,7 +354,7 @@ export const useOpenAIAssistant = ({
             
             if (error) {
               console.error('Error polling job:', error);
-              return;
+              return false; // Continue polling
             }
             
             console.log(`Job ${jobId} status:`, jobRow?.status);
@@ -363,52 +365,55 @@ export const useOpenAIAssistant = ({
               setIsLoading(false);
               setIsInitialized(true);
               
-              // Clean up
-              if (channelRef.current) {
-                channelRef.current.unsubscribe();
-                channelRef.current = null;
-              }
-              if (pollIntervalRef.current) {
-                clearInterval(pollIntervalRef.current);
-                pollIntervalRef.current = null;
-              }
-              
               if (onStateChange) onStateChange({ isInitialized: true, isLoading: false });
+              return true; // Stop polling
             } else if (jobRow?.status === 'failed') {
               console.error(`Job ${jobId} failed`);
               toast.error('Document generation failed.');
               setIsLoading(false);
-              
-              // Clean up
-              if (channelRef.current) {
-                channelRef.current.unsubscribe();
-                channelRef.current = null;
-              }
-              if (pollIntervalRef.current) {
-                clearInterval(pollIntervalRef.current);
-                pollIntervalRef.current = null;
-              }
+              return true; // Stop polling
             }
+            
+            return false; // Continue polling
           } catch (error) {
             console.error('Error polling job status:', error);
+            return false; // Continue polling
           }
-        }, 5000); // Poll every 5 seconds instead of 10
+        };
+        
+        // Set up interval with better cleanup handling
+        const pollInterval = setInterval(async () => {
+          const shouldStop = await pollJobStatus();
+          if (shouldStop) {
+            console.log(`Stopping polling for job ${jobId} - job completed or failed`);
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+            }
+            if (channelRef.current) {
+              channelRef.current.unsubscribe();
+              channelRef.current = null;
+            }
+          }
+        }, 5000); // Poll every 5 seconds
          
         pollIntervalRef.current = pollInterval;
         
         // Start first poll immediately
         console.log(`Starting immediate first poll for job ${jobId}...`);
         setTimeout(async () => {
-          try {
-            console.log(`First poll for job ${jobId}...`);
-            const { data: jobRow, error } = await (supabase as any).from('document_generation_jobs').select('status,result').eq('id', jobId).single();
-            if (error) {
-              console.error('Error in first poll:', error);
-            } else {
-              console.log(`First poll result - Job ${jobId} status:`, jobRow?.status);
+          console.log(`First poll for job ${jobId}...`);
+          const shouldStop = await pollJobStatus();
+          if (shouldStop) {
+            console.log(`Job ${jobId} completed in first poll!`);
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
             }
-          } catch (error) {
-            console.error('Error in first poll:', error);
+            if (channelRef.current) {
+              channelRef.current.unsubscribe();
+              channelRef.current = null;
+            }
           }
         }, 2000); // First poll after 2 seconds
         
