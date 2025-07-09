@@ -11,6 +11,8 @@ const corsHeaders = {
 const MAX_ATTEMPTS = 3;
 // Memory threshold for processing (in MB)
 const MEMORY_THRESHOLD_MB = 100;
+// Minutes after which a 'processing' job is considered stale
+const STALE_PROCESSING_MINUTES = 5;
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -27,11 +29,14 @@ serve(async (req: Request) => {
   let currentJobId: string | null = null;
 
   try {
-    // 1. Fetch one pending job (simple implementation)
+    // Calculate stale timestamp
+    const staleTimestamp = new Date(Date.now() - STALE_PROCESSING_MINUTES * 60 * 1000).toISOString();
+    
+    // 1. Fetch one pending job OR a stale processing job
     const { data: job, error: fetchErr } = await supabase
       .from("document_generation_jobs")
       .select("*")
-      .eq("status", "pending")
+      .or(`status.eq.pending,and(status.eq.processing,updated_at.lt.${staleTimestamp})`)
       .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
@@ -44,6 +49,11 @@ serve(async (req: Request) => {
     }
 
     currentJobId = job.id;
+
+    // If this was a stale processing job, log it
+    if (job.status === "processing") {
+      console.log(`Recovering stale job ${job.id} that was stuck in processing since ${job.updated_at}`);
+    }
 
     // Mark as processing
     await supabase
@@ -63,7 +73,7 @@ serve(async (req: Request) => {
 
     console.log(`Processing job ${job.id} for drug: ${job.drug_name} (attempt ${(job.attempts || 0) + 1})`);
 
-    // Add timeout to prevent hanging
+    // Add timeout to prevent hanging (keep this generous for now)
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 minute timeout
 

@@ -25,9 +25,9 @@ const DOCUMENT_ASSISTANT_ID = "asst_YD3cbgbhibchd3NltzVtP2VO";
 // TxAgent configuration
 const TXAGENT_BASE_URL = "https://api.runpod.ai/v2/os7ld1gn1e2us3/openai/v1";
 const TXAGENT_MODEL = "mims-harvard/TxAgent-T1-Llama-3.1-8B";
-const TXAGENT_TIMEOUT_DOCUMENT = 180000; // 3 minutes for document generation
-const TXAGENT_TIMEOUT_CHAT = 45000; // 45 seconds for chat
-const MAX_RETRIES = 3;
+const TXAGENT_TIMEOUT_DOCUMENT = 25000; // 25 seconds for document generation (to fit within 30s edge function limit)
+const TXAGENT_TIMEOUT_CHAT = 20000; // 20 seconds for chat
+const MAX_RETRIES = 1; // Reduce retries to avoid timeout
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -319,7 +319,7 @@ Generate the complete document now:`;
           messages: [
             { role: "user", content: prompt }
           ],
-          max_tokens: generateDocument ? 2000 : 1500, // More tokens for document generation
+          max_tokens: generateDocument ? 1200 : 800, // Reduced tokens to improve generation speed
           temperature: 0.1
         })
       });
