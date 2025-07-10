@@ -52,7 +52,7 @@ serve(async (req: Request) => {
       })
       .eq("id", job.id);
 
-    // 3. Prepare RunPod payload
+    // 3. Prepare RunPod payload - FIX: Use correct format matching working version
     const systemPrompt = `You are TxAgent, a specialized AI assistant for pharmaceutical professionals. You help clinicians and decision makers understand the impact of drug shortages and develop response strategies.
 
 Generate a comprehensive drug shortage document that includes:
@@ -66,28 +66,25 @@ Generate a comprehensive drug shortage document that includes:
 Use professional medical language and evidence-based recommendations.`;
 
     const runpodPayload = {
-      input: {
-        openai_route: "/v1/chat/completions",
-        model: "mims-harvard/TxAgent-T1-Llama-3.1-8B",
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt
-          },
-          {
-            role: "user", 
-            content: `Generate a comprehensive drug shortage document for: ${job.drug_name}\n\nProvide detailed analysis including clinical impact, therapeutic alternatives, and recommendations. Format the response in markdown.`
-          }
-        ],
-        max_tokens: 1200,
-        temperature: 0.1
-      }
+      model: "mims-harvard/TxAgent-T1-Llama-3.1-8B",
+      messages: [
+        {
+          role: "system",
+          content: systemPrompt
+        },
+        {
+          role: "user", 
+          content: `Generate a comprehensive drug shortage document for: ${job.drug_name}\n\nProvide detailed analysis including clinical impact, therapeutic alternatives, and recommendations. Format the response in markdown.`
+        }
+      ],
+      max_tokens: 1200,
+      temperature: 0.1
     };
 
-    // 4. Submit to RunPod (ASYNC - don't wait for completion!)
+    // 4. Submit to RunPod (ASYNC - don't wait for completion!) - FIX: Use correct endpoint
     console.log(`🚀 Submitting to RunPod endpoint ${RUNPOD_ENDPOINT_ID}...`);
     
-    const runpodResponse = await fetch(`https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}/run`, {
+    const runpodResponse = await fetch(`https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}/openai/v1/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -102,30 +99,51 @@ Use professional medical language and evidence-based recommendations.`;
     }
 
     const runpodResult = await runpodResponse.json();
-    const runpodJobId = runpodResult.id;
-
-    if (!runpodJobId) {
-      throw new Error("RunPod did not return a job ID");
+    
+    // With direct endpoint, we get the result immediately - no async job ID
+    if (!runpodResult.choices || !runpodResult.choices[0] || !runpodResult.choices[0].message) {
+      throw new Error("Invalid response format from RunPod");
     }
 
-    // 5. Store RunPod job ID (temporarily in error_message field until we add proper column)
+    const documentContent = runpodResult.choices[0].message.content;
+    
+    if (!documentContent || documentContent.trim().length === 0) {
+      throw new Error("RunPod returned empty document content");
+    }
+
+    console.log(`📄 Document generated successfully (${documentContent.length} characters)`);
+
+    // 5. Save document to database immediately
+    const { error: saveError } = await supabase.rpc('save_session_document', {
+      p_session_id: job.session_id,
+      p_content: documentContent,
+    });
+
+    if (saveError) {
+      console.error(`❌ Failed to save document for job ${job.id}:`, saveError);
+      throw new Error(`Failed to save document: ${saveError.message}`);
+    }
+
+    // 6. Update job as completed
     await supabase
       .from("document_generation_jobs")
-      .update({ 
-        error_message: runpodJobId, // Store RunPod job ID here temporarily
-        updated_at: new Date().toISOString() 
+      .update({
+        status: "completed",
+        result: documentContent,
+        error_message: null,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", job.id);
 
-    console.log(`✅ Job ${job.id} submitted to RunPod with ID: ${runpodJobId}`);
+    console.log(`✅ Job ${job.id} completed successfully`);
 
-    // 6. Return immediately - no waiting!
+    // 7. Return success
     return new Response(JSON.stringify({ 
       success: true,
-      message: `Job ${job.id} submitted to RunPod successfully`,
+      message: `Job ${job.id} completed successfully`,
       jobId: job.id,
-      runpodJobId: runpodJobId,
-      estimatedCompletionTime: "2-5 minutes"
+      documentLength: documentContent.length,
+      executionTime: "immediate"
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
@@ -133,17 +151,37 @@ Use professional medical language and evidence-based recommendations.`;
   } catch (error) {
     console.error("❌ Async processor error:", error);
     
-    // If we had a job, mark it as failed so it can be retried
-    if (error.jobId) {
+    // Get the current job ID from the scope if we have one
+    let currentJobId = null;
+    try {
+      // Try to get job details from the first part of our function
+      const { data: failedJob } = await supabase
+        .from("document_generation_jobs")
+        .select("id")
+        .eq("status", "processing")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      
+      if (failedJob) {
+        currentJobId = failedJob.id;
+      }
+    } catch (lookupErr) {
+      console.error("Could not find failed job ID:", lookupErr);
+    }
+    
+    // Reset job to pending for retry if we found it
+    if (currentJobId) {
       try {
         await supabase
           .from("document_generation_jobs")
           .update({
             status: "pending", // Reset to pending for retry
-            error_message: `Submission failed: ${error.message}`,
+            error_message: `Processing failed: ${error.message}`,
             updated_at: new Date().toISOString(),
           })
-          .eq("id", error.jobId);
+          .eq("id", currentJobId);
+        console.log(`Reset job ${currentJobId} to pending for retry`);
       } catch (updateErr) {
         console.error("Failed to update job status:", updateErr);
       }
