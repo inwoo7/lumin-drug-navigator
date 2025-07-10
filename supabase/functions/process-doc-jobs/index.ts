@@ -31,15 +31,40 @@ serve(async (req: Request) => {
   try {
     // Calculate stale timestamp
     const staleTimestamp = new Date(Date.now() - STALE_PROCESSING_MINUTES * 60 * 1000).toISOString();
+    console.log(`Looking for jobs. Stale threshold: ${staleTimestamp}`);
     
-    // 1. Fetch one pending job OR a stale processing job
-    const { data: job, error: fetchErr } = await supabase
+    // 1. First try to get a pending job
+    let { data: job, error: fetchErr } = await supabase
       .from("document_generation_jobs")
       .select("*")
-      .or(`status.eq.pending,and(status.eq.processing,updated_at.lt.${staleTimestamp})`)
+      .eq("status", "pending")
       .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
+
+    // 2. If no pending jobs, look for stale processing jobs
+    if (!job && !fetchErr) {
+      console.log(`No pending jobs found. Checking for stale processing jobs older than ${staleTimestamp}`);
+      const { data: staleJob, error: staleErr } = await supabase
+        .from("document_generation_jobs")
+        .select("*")
+        .eq("status", "processing")
+        .lt("updated_at", staleTimestamp)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      
+      if (staleJob) {
+        console.log(`Found stale processing job: ${staleJob.id} (updated: ${staleJob.updated_at})`);
+      } else {
+        console.log(`No stale processing jobs found`);
+      }
+      
+      job = staleJob;
+      fetchErr = staleErr;
+    } else if (job) {
+      console.log(`Found pending job: ${job.id}`);
+    }
 
     if (fetchErr) throw fetchErr;
     if (!job) {
@@ -73,9 +98,9 @@ serve(async (req: Request) => {
 
     console.log(`Processing job ${job.id} for drug: ${job.drug_name} (attempt ${(job.attempts || 0) + 1})`);
 
-    // Add timeout to prevent hanging (keep this generous for now)
+    // Add timeout to prevent hanging - must be under 30s for edge function limit
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 minute timeout
+    const timeoutId = setTimeout(() => controller.abort(), 25 * 1000); // 25 second timeout
 
     let documentContent: string;
     try {

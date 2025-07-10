@@ -9,13 +9,13 @@ jobs:
   call-worker:
     runs-on: ubuntu-latest
     steps:
-      - name: Call Supabase process-doc-jobs
+      - name: Call Async Document Processor
         run: |
-          echo "Processing document generation jobs..."
+          echo "Processing document generation jobs (async)..."
           response=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
-            https://oeazqjeopkepqynrqsxj.supabase.co/functions/v1/process-doc-jobs)
+            https://oeazqjeopkepqynrqsxj.supabase.co/functions/v1/async-doc-processor)
           
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | head -n -1)
@@ -28,4 +28,24 @@ jobs:
             exit 1
           fi
           
-          echo "Document processing completed successfully" 
+          echo "Document submission completed successfully"
+          
+      - name: Check RunPod Job Status
+        run: |
+          echo "Checking RunPod job completion status..."
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            https://oeazqjeopkepqynrqsxj.supabase.co/functions/v1/runpod-status-checker)
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n -1)
+          
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+          
+          if [ "$http_code" -ne 200 ]; then
+            echo "Warning: Status checker returned status $http_code (non-critical)"
+          else
+            echo "Status check completed successfully"
+          fi 
