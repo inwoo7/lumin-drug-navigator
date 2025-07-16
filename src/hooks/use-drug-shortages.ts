@@ -2,8 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import {
   searchDrugShortages,
   getDrugShortageReport,
-  mockSearchDrugShortages,
-  mockGetDrugShortageReport,
   DrugShortageSearchResult,
   DrugShortageReport
 } from "@/integrations/drugShortage/api";
@@ -41,8 +39,8 @@ export const useDrugShortageSearch = (drugName: string, sessionId?: string) => {
 
             if (cachedSearch) {
               console.log(`Using cached results for session ${sessionId}`);
-              // Type assertion to convert from Json to our expected type
-              return cachedSearch.results as unknown as DrugShortageSearchResult[];
+              const cached = cachedSearch.results as unknown as DrugShortageSearchResult[];
+              return cached.filter(r => !(r.brand_name && r.brand_name.toLowerCase().includes('mock')));
             }
           }
         }
@@ -58,15 +56,23 @@ export const useDrugShortageSearch = (drugName: string, sessionId?: string) => {
 
         if (cachedSearch) {
           console.log(`Using cached results for "${drugName}"`);
-          // Type assertion to convert from Json to our expected type
-          return cachedSearch.results as unknown as DrugShortageSearchResult[];
+          const cached = cachedSearch.results as unknown as DrugShortageSearchResult[];
+          return cached.filter(r => !(r.brand_name && r.brand_name.toLowerCase().includes('mock')));
         }
 
         console.log(`No cached results found for "${drugName}", fetching from API...`);
         // If not in cache, fetch from API
-        const results = await searchDrugShortages(drugName);
+        let results = await searchDrugShortages(drugName);
+
+        // Filter out any mock placeholder items that may have slipped through
+        results = results.filter(r => !(r.brand_name && r.brand_name.toLowerCase().includes('mock')));
+
+        if (results.length === 0) {
+          // If we still have no real results, simply return empty without writing to DB
+          return [];
+        }
         
-        // Store the results in Supabase
+        // Store the results in Supabase only if we have real data
         await supabase
           .from('drug_shortage_searches')
           .insert({
@@ -104,16 +110,9 @@ export const useDrugShortageSearch = (drugName: string, sessionId?: string) => {
             duration: 3000
           });
         } else {
-          console.warn(`Error fetching drug shortage data: ${err.message || 'Unknown error'}. Using mock data.`);
-          toast.info("Using sample drug shortage data (API temporarily unavailable)", {
-            id: errorId,
-            duration: 3000
-          });
+          console.warn('Drug shortage API error:', err.message);
+          return [];
         }
-        
-        // Fall back to mock data on error
-        const mockData = await mockSearchDrugShortages(drugName);
-        return mockData;
       }
     },
     enabled: drugName.length > 0,
@@ -175,26 +174,8 @@ export const useDrugShortageReport = (
         
         const errorId = `report-error-${reportId}`;
         
-        if (err.missingCredentials) {
-          toast.info("Using sample shortage report data (API credentials not configured)", {
-            id: "missing-credentials",
-            duration: 3000
-          });
-        } else if (err.message && err.message.includes('404')) {
-          toast.info("Using sample shortage report data (API temporarily unavailable)", {
-            id: errorId,
-            duration: 3000
-          });
-        } else {
-          console.warn(`Error fetching drug shortage report: ${err.message || 'Unknown error'}. Using mock data.`);
-          toast.info("Using sample shortage report data (API temporarily unavailable)", {
-            id: errorId,
-            duration: 3000
-          });
-        }
-        
-        // Fall back to mock data
-        return await mockGetDrugShortageReport(reportId, type);
+        console.warn('Drug shortage report API error:', err.message);
+        return null;
       }
     },
     enabled: !!reportId,

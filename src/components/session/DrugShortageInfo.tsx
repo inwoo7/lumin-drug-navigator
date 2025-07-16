@@ -40,12 +40,13 @@ const DrugShortageInfo = ({
   
   // Effect to select the first report when shortages are loaded
   useEffect(() => {
-  if (shortages.length > 0 && !selectedReport && !isSearchLoading) {
-    setSelectedReport(shortages[0].id);
-    setSelectedReportType(shortages[0].type);
+  const realShortages = shortages.filter(s => !s.brand_name.toLowerCase().includes('mock'));
+  if (realShortages.length > 0 && !selectedReport && !isSearchLoading) {
+    setSelectedReport(realShortages[0].id);
+    setSelectedReportType(realShortages[0].type);
     // Notify parent component if callback exists
     if (onReportSelect) {
-      onReportSelect(shortages[0].id, shortages[0].type);
+      onReportSelect(realShortages[0].id, realShortages[0].type);
     }
   }
   }, [shortages, selectedReport, isSearchLoading, onReportSelect]);
@@ -91,7 +92,8 @@ const DrugShortageInfo = ({
       </Card>;
   }
   
-  if (shortages.length === 0) {
+  const realShortages = shortages.filter(s => !s.brand_name.toLowerCase().includes('mock'));
+  if (realShortages.length === 0) {
     return <Card className="h-full">
         <CardHeader>
           <CardTitle>No Shortages Found</CardTitle>
@@ -112,10 +114,10 @@ const DrugShortageInfo = ({
       </Card>;
   }
   
-  const ReportSelector = () => shortages.length > 1 ? <div className="mb-4">
+  const ReportSelector = () => realShortages.length > 1 ? <div className="mb-4">
         <h4 className="text-sm font-medium mb-2">Select Report:</h4>
         <div className="grid grid-cols-1 gap-2 max-h-[200px] overflow-y-auto">
-          {shortages.map(shortage => <Card 
+          {realShortages.map(shortage => <Card 
             key={shortage.id} 
             className={`cursor-pointer border ${selectedReport === shortage.id ? 'border-lumin-teal bg-lumin-teal/5' : 'border-gray-200'}`} 
             onClick={() => handleReportSelection(shortage.id, shortage.type)}
@@ -135,7 +137,7 @@ const DrugShortageInfo = ({
         </div>
       </div> : null;
   
-  if (isReportLoading || !report) {
+  if (isReportLoading) {
     return <Card className="h-full">
         <CardHeader>
           <CardTitle className="text-xl">{formatDrugNameForDisplay(drugName)}</CardTitle>
@@ -147,6 +149,18 @@ const DrugShortageInfo = ({
             <Loader2 className="h-8 w-8 animate-spin text-lumin-teal" />
           </div>
         </CardContent>
+      </Card>;
+  }
+ 
+  // Show a simple "no shortage" message if the report couldn't be loaded
+  if (!report) {
+    return <Card className="h-full">
+        <CardHeader>
+          <CardTitle>No shortage found</CardTitle>
+          <CardDescription>
+            There are no shortage reports for {formatDrugNameForDisplay(drugName)}.
+          </CardDescription>
+        </CardHeader>
       </Card>;
   }
   

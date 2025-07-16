@@ -1,0 +1,19 @@
+{
+  "name": "lumin-doc-processor",
+  "version": "1.0.0",
+  "description": "GCP Cloud Function for document processing via RunPod",
+  "main": "index.js",
+  "scripts": {
+    "start": "functions-framework --target=processDocument",
+    "deploy": "gcloud functions deploy lumin-doc-processor --runtime=nodejs20 --trigger=http --allow-unauthenticated --timeout=840s --memory=512MB"
+  },
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.3.0",
+    "@google-cloud/secret-manager": "^5.5.0",
+    "@supabase/supabase-js": "^2.38.4",
+    "node-fetch": "^2.6.7"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+} 

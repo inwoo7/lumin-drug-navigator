@@ -62,14 +62,16 @@ const DrugSearch = () => {
           onBlur={() => setTimeout(() => setOpen(false), 200)}
         />
         <CommandList className="max-h-[300px] overflow-y-auto">
-          {searchTerm.length >= 3 ? (
-            <React.Fragment>
-              {loading ? (
+          {searchTerm.length >= 3 && (
+            <div>
+              {loading && (
                 <div className="py-4 text-center text-gray-500">Loading drug names...</div>
-              ) : error ? (
+              )}
+              {!loading && error && (
                 <div className="py-4 text-center text-red-500">{error}</div>
-              ) : (
-                <React.Fragment>
+              )}
+              {!loading && !error && (
+                <div>
                   <CommandEmpty>No drugs found.</CommandEmpty>
                   <CommandGroup heading="Drugs">
                     {drugs.map((drug) => (
@@ -82,10 +84,10 @@ const DrugSearch = () => {
                       </CommandItem>
                     ))}
                   </CommandGroup>
-                </React.Fragment>
+                </div>
               )}
-            </React.Fragment>
-          ) : null}
+            </div>
+          )}
         </CommandList>
       </Command>
     </div>

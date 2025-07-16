@@ -44,13 +44,13 @@ serve(async (req: Request) => {
     console.log(`📋 Processing job ${job.id} for drug: ${job.drug_name}`);
 
     // 2. Mark as processing immediately
-    await supabase
-      .from("document_generation_jobs")
-      .update({ 
-        status: "processing", 
-        updated_at: new Date().toISOString() 
-      })
-      .eq("id", job.id);
+    // await supabase
+    //   .from("document_generation_jobs")
+    //   .update({ 
+    //     status: "processing", 
+    //     updated_at: new Date().toISOString() 
+    //   })
+    //   .eq("id", job.id);
 
     // 3. Prepare RunPod payload - FIX: Use correct format matching working version
     const systemPrompt = `You are TxAgent, a specialized AI assistant for pharmaceutical professionals. You help clinicians and decision makers understand the impact of drug shortages and develop response strategies.
@@ -81,72 +81,82 @@ Use professional medical language and evidence-based recommendations.`;
       temperature: 0.1
     };
 
-    // 4. Submit to RunPod (ASYNC - don't wait for completion!) - FIX: Use correct endpoint
-    console.log(`🚀 Submitting to RunPod endpoint ${RUNPOD_ENDPOINT_ID}...`);
+    // 4. Submit to GCP Cloud Function with timeout fallback
+    console.log(`🚀 Submitting to GCP Cloud Function (with 55s fallback timeout)...`);
     
-    const runpodResponse = await fetch(`https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}/openai/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${RUNPOD_API_KEY}`
-      },
-      body: JSON.stringify(runpodPayload)
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      console.log("⏰ GCP function call timed out after 55 seconds");
+      controller.abort();
+    }, 55 * 1000); // 55 seconds - 5 second buffer before Supabase kills us
 
-    if (!runpodResponse.ok) {
-      const errorText = await runpodResponse.text();
-      throw new Error(`RunPod submission failed (${runpodResponse.status}): ${errorText}`);
+    try {
+      const gcpResponse = await fetch(`https://us-central1-lumin-drug-navigator-prod.cloudfunctions.net/lumin-doc-processor`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ trigger: "process_job", jobId: job.id }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!gcpResponse.ok) {
+        const errorText = await gcpResponse.text();
+        throw new Error(`GCP submission failed (${gcpResponse.status}): ${errorText}`);
+      }
+
+      const gcpResult = await gcpResponse.json();
+      
+      // GCP Cloud Function handles the entire job processing and database updates
+      if (!gcpResult.success) {
+        throw new Error(`GCP processing failed: ${gcpResult.error}`);
+      }
+
+      // Handle different response scenarios
+      if (gcpResult.jobId === null) {
+        // No pending jobs to process
+        console.log(`✅ GCP reported no pending jobs`);
+        return new Response(JSON.stringify({ 
+          success: true,
+          message: gcpResult.message || "No pending jobs",
+          jobId: null,
+          executionTime: "gcp_cloud_function"
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      } else {
+        // Job was processed successfully
+        console.log(`✅ GCP processing completed for job ${gcpResult.jobId}`);
+        return new Response(JSON.stringify({ 
+          success: true,
+          message: `Job processing completed via GCP`,
+          jobId: gcpResult.jobId,
+          documentLength: gcpResult.documentLength,
+          executionTime: "gcp_cloud_function"
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      
+      if (fetchError.name === 'AbortError') {
+        console.log("🔄 GCP function timed out, job will remain in 'processing' state for GCP to complete");
+        // Don't throw error - GCP function will complete the job even if we timeout
+        return new Response(JSON.stringify({ 
+          success: true,
+          message: `Job delegated to GCP (Supabase timeout but GCP will complete)`,
+          jobId: job.id,
+          executionTime: "gcp_async"
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+      throw fetchError;
     }
-
-    const runpodResult = await runpodResponse.json();
-    
-    // With direct endpoint, we get the result immediately - no async job ID
-    if (!runpodResult.choices || !runpodResult.choices[0] || !runpodResult.choices[0].message) {
-      throw new Error("Invalid response format from RunPod");
-    }
-
-    const documentContent = runpodResult.choices[0].message.content;
-    
-    if (!documentContent || documentContent.trim().length === 0) {
-      throw new Error("RunPod returned empty document content");
-    }
-
-    console.log(`📄 Document generated successfully (${documentContent.length} characters)`);
-
-    // 5. Save document to database immediately
-    const { error: saveError } = await supabase.rpc('save_session_document', {
-      p_session_id: job.session_id,
-      p_content: documentContent,
-    });
-
-    if (saveError) {
-      console.error(`❌ Failed to save document for job ${job.id}:`, saveError);
-      throw new Error(`Failed to save document: ${saveError.message}`);
-    }
-
-    // 6. Update job as completed
-    await supabase
-      .from("document_generation_jobs")
-      .update({
-        status: "completed",
-        result: documentContent,
-        error_message: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", job.id);
-
-    console.log(`✅ Job ${job.id} completed successfully`);
-
-    // 7. Return success
-    return new Response(JSON.stringify({ 
-      success: true,
-      message: `Job ${job.id} completed successfully`,
-      jobId: job.id,
-      documentLength: documentContent.length,
-      executionTime: "immediate"
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
 
   } catch (error) {
     console.error("❌ Async processor error:", error);

@@ -29,6 +29,19 @@ const TXAGENT_TIMEOUT_DOCUMENT = 25000; // 25 seconds for document generation (t
 const TXAGENT_TIMEOUT_CHAT = 20000; // 20 seconds for chat
 const MAX_RETRIES = 1; // Reduce retries to avoid timeout
 
+// Required section headings for a valid shortage document
+const REQUIRED_SECTIONS = [
+  '### 1. Current Product Shortage Status',
+  '### 2. Major Indications',
+  '### 3. Therapeutic Alternatives by Indication',
+  '### 4. Subpopulations of Concern',
+  '### 5. Other Considerations'
+];
+
+function hasAllRequiredSections(content: string) {
+  return REQUIRED_SECTIONS.every(sec => content.includes(sec));
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -319,7 +332,7 @@ Generate the complete document now:`;
           messages: [
             { role: "user", content: prompt }
           ],
-          max_tokens: generateDocument ? 1200 : 800, // Reduced tokens to improve generation speed
+          max_tokens: generateDocument ? 2200 : 800, // Allow up to ~5 pages of markdown
           temperature: 0.1
         })
       });
@@ -357,52 +370,24 @@ Generate the complete document now:`;
       // Check if the document appears to have proper structure
       const headerCount = (messageContent.match(/^#{1,6}\s/gm) || []).length;
       const hasMainTitle = messageContent.includes('Drug Shortage Clinical Response Template');
-      const hasStructuredContent = messageContent.includes('**') && messageContent.includes('###');
+      const hasStructuredContent = hasAllRequiredSections(messageContent);
       
       console.log(`Document validation - Headers: ${headerCount}, HasMainTitle: ${hasMainTitle}, HasStructuredContent: ${hasStructuredContent}`);
       
-      if (headerCount < 3 || !hasMainTitle || !hasStructuredContent) {
+      if (!hasStructuredContent || !hasMainTitle) {
         console.warn('TxAgent generated document appears to be incomplete or improperly structured');
         console.log('First 500 characters of response:', messageContent.substring(0, 500));
         
         // If the document is clearly incomplete, try once more with a more explicit prompt
-        if (messageContent.length < 800 || headerCount < 2) {
+        if (messageContent.length < 800 || !hasStructuredContent) {
           console.log('Document appears too short or malformed, attempting retry with enhanced prompt');
           
-          const enhancedPrompt = `You are a clinical decision support LLM. Generate a COMPLETE drug shortage document for "${normalizedDrugName}". 
+          const enhancedPrompt = `${prompt}
 
-IMPORTANT: You must generate a FULL document with ALL sections filled out with real clinical information. Do not use placeholders, "N/A", or empty sections.
+IMPORTANT: Your previous response did not follow the exact markdown structure requested.  Regenerate the ENTIRE document and ensure every one of these section headings appears verbatim:
+${REQUIRED_SECTIONS.map(s=>`- ${s}`).join('\n')}
 
-Generate a complete markdown document with this exact structure:
-
-# Drug Shortage Clinical Response Template
-
-**Drug Name:** ${normalizedDrugName}
-**Date:** ${new Date().toLocaleDateString()}
-**Prepared by:** Clinical AI Assistant
-**For Use By:** Clinicians, Pharmacists, Formulary Committees, Health System Planners
-
-### 1. Current Product Shortage Status
-- **Molecule:** [Provide the generic name and chemical class]
-- **Formulations in Shortage (Canada):** [List common formulations like tablets, injections, etc.]
-- **Available Market Alternatives:** [List available alternatives]
-
-### 2. Major Indications
-- **On-label:** [List FDA/Health Canada approved uses]
-- **Common Off-label:** [List common off-label uses]
-
-### 3. Therapeutic Alternatives by Indication
-[For each indication, provide specific alternatives with clinical notes]
-
-### 4. Shortage Management Strategies
-- **Conservation strategies:** [Specific dose-sparing approaches]
-- **Alternative formulations:** [Other available forms]
-- **Compounding options:** [If applicable]
-
-### 5. Clinical Considerations
-[Important clinical guidance for prescribers]
-
-Fill every section with detailed, actionable clinical information. Make it comprehensive and clinically useful.`;
+Do NOT deviate from the template or add extra sections.  Fill every section with detailed, actionable clinical content suitable for hospital pharmacists and clinicians.`;
 
           try {
             const retryResponse = await fetch(`${TXAGENT_BASE_URL}/chat/completions`, {

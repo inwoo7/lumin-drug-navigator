@@ -151,20 +151,9 @@ export const searchDrugShortages = async (
     // Check if we can access the Edge Function
     const { available, authenticated } = await canAccessApi();
     
-    if (!available) {
-      console.warn("Edge Function not accessible. Using mock data instead.");
-      // Fall back to mock data
-      return mockSearchDrugShortages(drugName);
-    }
-    
-    if (!authenticated) {
-      console.warn("Edge Function doesn't have API credentials. Using mock data instead.");
-      toast.info("Using sample drug shortage data (API credentials not found)", {
-        id: "mock-data-notice",
-        duration: 3000
-      });
-      // Fall back to mock data
-      return mockSearchDrugShortages(drugName);
+    if (!available || !authenticated) {
+      console.warn("Drug Shortage edge function not available or not authenticated – returning empty results.");
+      return [];
     }
     
     console.log("Using Edge Function to search for drug:", drugName);
@@ -186,12 +175,8 @@ export const searchDrugShortages = async (
       
       // If the error response includes useMockData flag, gracefully fall back to mock data
       if (errorData.useMockData) {
-        console.warn("Drug Shortages Canada API unavailable, using mock data:", errorData.error);
-        toast.info("Using sample drug shortage data (API temporarily unavailable)", {
-          id: "mock-data-notice",
-          duration: 3000
-        });
-        return mockSearchDrugShortages(drugName);
+        console.warn("Drug Shortages Canada API unavailable:", errorData.error);
+        return [];
       }
       
       // For other errors, throw the ApiError as before
@@ -206,8 +191,8 @@ export const searchDrugShortages = async (
       throw error; // Rethrow our custom error
     }
     console.error("Drug shortage search error:", error);
-    // Fall back to mock data for unknown errors
-    return mockSearchDrugShortages(drugName);
+    // Return empty results on error instead of mock data
+    return [];
   }
 };
 
@@ -220,20 +205,9 @@ export const getDrugShortageReport = async (
     // Check if we can access the Edge Function
     const { available, authenticated } = await canAccessApi();
     
-    if (!available) {
-      console.warn("Edge Function not accessible. Using mock data instead.");
-      // Fall back to mock data
-      return mockGetDrugShortageReport(reportId, type);
-    }
-    
-    if (!authenticated) {
-      console.warn("Edge Function doesn't have API credentials. Using mock data instead.");
-      toast.info("Using sample shortage report data (API credentials not found)", {
-        id: "mock-report-notice",
-        duration: 3000
-      });
-      // Fall back to mock data
-      return mockGetDrugShortageReport(reportId, type);
+    if (!available || !authenticated) {
+      console.warn("Drug Shortage edge function not available or not authenticated – returning empty report.");
+      throw new ApiError("No shortage report available", true);
     }
     
     console.log("Using Edge Function to get report:", reportId);
@@ -255,12 +229,8 @@ export const getDrugShortageReport = async (
       
       // If the error response includes useMockData flag, gracefully fall back to mock data
       if (errorData.useMockData) {
-        console.warn("Drug Shortages Canada API unavailable, using mock data:", errorData.error);
-        toast.info("Using sample shortage report data (API temporarily unavailable)", {
-          id: "mock-report-notice",
-          duration: 3000
-        });
-        return mockGetDrugShortageReport(reportId, type);
+        console.warn("Drug Shortages Canada API unavailable:", errorData.error);
+        throw new ApiError("No shortage report available", true);
       }
       
       // For other errors, throw the ApiError as before
@@ -274,8 +244,8 @@ export const getDrugShortageReport = async (
       throw error; // Rethrow our custom error
     }
     console.error("Get drug shortage report error:", error);
-    // Fall back to mock data for unknown errors
-    return mockGetDrugShortageReport(reportId, type);
+    // Propagate an error so the caller can handle it; do not return mock data
+    throw new ApiError("No shortage report available");
   }
 };
 
