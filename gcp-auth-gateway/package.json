@@ -1,0 +1,14 @@
+{
+  "name": "lumin-auth-gateway",
+  "version": "1.0.0",
+  "description": "Secure authentication gateway for TxAgent RunPod workers",
+  "main": "index.js",
+  "dependencies": {
+    "node-fetch": "^2.6.7",
+    "jsonwebtoken": "^9.0.2",
+    "@google-cloud/secret-manager": "^5.0.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+} 
