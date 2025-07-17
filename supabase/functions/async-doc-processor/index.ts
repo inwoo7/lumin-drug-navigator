@@ -81,22 +81,30 @@ Use professional medical language and evidence-based recommendations.`;
       temperature: 0.1
     };
 
-    // 4. Submit to GCP Cloud Function with timeout fallback
-    console.log(`🚀 Submitting to GCP Cloud Function (with 55s fallback timeout)...`);
+    // 4. Submit to GCP Authentication Gateway with timeout fallback
+    console.log(`🚀 Submitting to GCP Auth Gateway (with 55s fallback timeout)...`);
     
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
-      console.log("⏰ GCP function call timed out after 55 seconds");
+      console.log("⏰ GCP gateway call timed out after 55 seconds");
       controller.abort();
     }, 55 * 1000); // 55 seconds - 5 second buffer before Supabase kills us
 
+    // Get Supabase service role token for authentication
+    const supabaseServiceToken = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
     try {
-      const gcpResponse = await fetch(`https://us-central1-lumin-drug-navigator-prod.cloudfunctions.net/lumin-doc-processor`, {
+      const gcpResponse = await fetch(`https://us-central1-lumin-drug-navigator-prod.cloudfunctions.net/lumin-auth-gateway`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${supabaseServiceToken}`
         },
-        body: JSON.stringify({ trigger: "process_job", jobId: job.id }),
+        body: JSON.stringify({
+          prompt: `Generate a comprehensive drug shortage document for: ${job.drug_name}\n\nProvide detailed analysis including clinical impact, therapeutic alternatives, and recommendations. Format the response in markdown.`,
+          max_tokens: 1200,
+          temperature: 0.1
+        }),
         signal: controller.signal
       });
 
@@ -108,37 +116,141 @@ Use professional medical language and evidence-based recommendations.`;
       }
 
       const gcpResult = await gcpResponse.json();
-      
-      // GCP Cloud Function handles the entire job processing and database updates
-      if (!gcpResult.success) {
-        throw new Error(`GCP processing failed: ${gcpResult.error}`);
+
+      // If the gateway returned just the job ID and status, poll RunPod until the job is completed
+      if (gcpResult.data && gcpResult.data.id && gcpResult.data.status && gcpResult.data.status !== "COMPLETED") {
+        console.log(`🕑 RunPod job ${gcpResult.data.id} queued, polling for completion...`);
+        const jobId = gcpResult.data.id as string;
+        let pollAttempts = 0;
+        let pollJson: any = null;
+        while (pollAttempts < 90) { // ~60 seconds (30 * 2s)
+          const pollRes = await fetch(`https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}/status/${jobId}`, {
+            headers: { "Authorization": `Bearer ${RUNPOD_API_KEY}` }
+          });
+          pollJson = await pollRes.json();
+          if (pollJson.status === "COMPLETED") {
+            console.log(`✅ RunPod job ${jobId} completed after ${pollAttempts} polls`);
+            gcpResult.data = pollJson; // reshape so downstream extraction works
+            break;
+          }
+          if (pollJson.status === "FAILED") {
+            throw new Error(`RunPod job failed: ${pollJson.error || "unknown"}`);
+          }
+          await new Promise((r) => setTimeout(r, 2000)); // wait 2s
+          pollAttempts++;
+        }
+        if (pollJson?.status !== "COMPLETED") {
+          throw new Error("RunPod job did not complete in time");
+        }
       }
 
-      // Handle different response scenarios
-      if (gcpResult.jobId === null) {
-        // No pending jobs to process
-        console.log(`✅ GCP reported no pending jobs`);
-        return new Response(JSON.stringify({ 
-          success: true,
-          message: gcpResult.message || "No pending jobs",
-          jobId: null,
-          executionTime: "gcp_cloud_function"
-        }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" }
-        });
-      } else {
-        // Job was processed successfully
-        console.log(`✅ GCP processing completed for job ${gcpResult.jobId}`);
-        return new Response(JSON.stringify({ 
-          success: true,
-          message: `Job processing completed via GCP`,
-          jobId: gcpResult.jobId,
-          documentLength: gcpResult.documentLength,
-          executionTime: "gcp_cloud_function"
-        }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" }
-        });
+      // Normalize RunPod output to plain string
+      if (gcpResult.data && gcpResult.data.output) {
+        let op: any = gcpResult.data.output;
+
+        if (Array.isArray(op)) {
+          // Chat array format → use first message content if present
+          if (op[0]?.content) {
+            op = op[0].content;
+          } else {
+            op = op.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join("\n");
+          }
+        } else if (typeof op === "object" && op !== null) {
+          // Object output may embed choices/tokens similar to OpenAI format
+          if (op.message?.content) {
+            op = op.message.content;
+          } else if (op.choices && op.choices[0]?.message?.content) {
+            op = op.choices[0].message.content;
+          } else if (op.choices && op.choices[0]?.tokens) {
+            // Join token array into string
+            const toks = op.choices[0].tokens as any[];
+            op = toks.map((t) => (typeof t === "string" ? t : t.text || t.content || "")).join("");
+          } else if (op.tokens) {
+            const toks = op.tokens as any[];
+            op = toks.map((t) => (typeof t === "string" ? t : t.text || t.content || "")).join("");
+          } else {
+            // Fallback stringify
+            op = JSON.stringify(op);
+          }
+        }
+
+        gcpResult.data.output = op;
       }
+
+      // Extract document content from the gateway or polled response
+      if (!gcpResult.success || !gcpResult.data) {
+        throw new Error(`GCP gateway failed: ${gcpResult.error || 'Invalid response format'}`);
+      }
+
+      let documentContent;
+      if (gcpResult.data.choices && gcpResult.data.choices[0] && gcpResult.data.choices[0].message) {
+        documentContent = gcpResult.data.choices[0].message.content;
+      } else if (gcpResult.data.output) {
+        documentContent = gcpResult.data.output;
+      } else if (gcpResult.data.choices && gcpResult.data.choices[0]?.tokens) {
+        // Some engines return an array of tokens (either strings or token objects)
+        try {
+          const rawTokens = gcpResult.data.choices[0].tokens as any[];
+          documentContent = rawTokens
+            .map((t) => {
+              if (typeof t === "string") return t;
+              if (typeof t === "object" && t !== null) {
+                return (
+                  t.text || // common key
+                  t.content || // alternative key
+                  ""
+                );
+              }
+              return "";
+            })
+            .join("");
+        } catch (err) {
+          console.error("Token array extraction failed", err);
+          documentContent = JSON.stringify(gcpResult.data);
+        }
+      } else {
+        throw new Error('No valid content found in gateway response');
+      }
+
+      if (!documentContent || documentContent.trim().length === 0) {
+        throw new Error('Gateway returned empty document content');
+      }
+
+      console.log(`📄 Document generated successfully via gateway (${documentContent.length} characters)`);
+
+      // 5. Save document to database
+      const { error: saveDocError } = await supabase.rpc('save_session_document', {
+        p_session_id: job.session_id,
+        p_content: documentContent,
+      });
+
+      if (saveDocError) {
+        throw new Error(`Failed to save document: ${saveDocError.message}`);
+      }
+
+      // 6. Mark job as completed
+      const { error: updateError } = await supabase
+        .from("document_generation_jobs")
+        .update({
+          status: "completed",
+          result: documentContent,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", job.id);
+
+      if (updateError) {
+        throw new Error(`Failed to update job status: ${updateError.message}`);
+      }
+
+      console.log(`✅ Job ${job.id} completed successfully via GCP gateway`);
+      return new Response(JSON.stringify({ 
+        success: true,
+        message: "Job delegated to GCP (Supabase timeout but GCP will complete)",
+        jobId: job.id,
+        executionTime: "gcp_async"
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
 
     } catch (fetchError) {
       clearTimeout(timeoutId);

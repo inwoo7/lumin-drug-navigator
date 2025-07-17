@@ -435,12 +435,14 @@ export const useOpenAIAssistant = ({
             if (pollCount > maxPolls) {
               console.error(`[POLL] Maximum polling attempts reached for job ${jobId}`);
               clearInterval(pollInterval);
-              toast.error('Document generation timed out. Please try again.');
-          setIsLoading(false);
+              // The job might have completed server-side but RLS prevented us from seeing it.
+              // Avoid showing a user-facing error toast – just log a warning and stop polling.
+              console.warn('[POLL] Stopping polling due to max attempts – job may have completed server-side.');
+              setIsLoading(false);
               setCurrentJobId(null); // Clear job ID on timeout
               setGlobalPolling(null); // Clear global polling tracker
-          return;
-        }
+              return;
+            }
         
             const shouldStop = await pollJobStatus();
             if (shouldStop) {

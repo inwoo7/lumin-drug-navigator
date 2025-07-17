@@ -16,14 +16,14 @@ const corsHeaders = {
 
 // Get API keys from the environment
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
-const runpodApiKey = Deno.env.get('RUNPOD_API_KEY');
+// Note: RunPod API key is now handled by the GCP gateway for security
+const gcpGatewayUrl = Deno.env.get('GCP_AUTH_GATEWAY_URL') || 'https://us-central1-lumin-drug-navigator-prod.cloudfunctions.net/lumin-auth-gateway';
 
 // OpenAI Assistant IDs for different purposes
 const SHORTAGE_ASSISTANT_ID = "asst_p9adU6tFNefnEmlqMDmuAbeg";
 const DOCUMENT_ASSISTANT_ID = "asst_YD3cbgbhibchd3NltzVtP2VO";
 
-// TxAgent configuration
-const TXAGENT_BASE_URL = "https://api.runpod.ai/v2/os7ld1gn1e2us3/openai/v1";
+// TxAgent configuration - now routed through GCP authentication gateway
 const TXAGENT_MODEL = "mims-harvard/TxAgent-T1-Llama-3.1-8B";
 const TXAGENT_TIMEOUT_DOCUMENT = 25000; // 25 seconds for document generation (to fit within 30s edge function limit)
 const TXAGENT_TIMEOUT_CHAT = 20000; // 20 seconds for chat
@@ -47,6 +47,10 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+  
+  // Extract Supabase JWT token from Authorization header for TxAgent gateway
+  const authHeader = req.headers.get('authorization');
+  const supabaseToken = authHeader?.replace('Bearer ', '');
   
   try {
     // Parse the request first to get model type
@@ -89,24 +93,10 @@ serve(async (req) => {
     console.log(`Received request for ${assistantType} assistant using ${modelType} model`);
 
     // Validate API keys based on model type
-    if (modelType === "txagent" && !runpodApiKey) {
-      console.error("RunPod API key not configured");
-      return new Response(
-        JSON.stringify({ 
-          error: "TxAgent API key not configured", 
-          missingApiKey: true 
-        }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, "Content-Type": "application/json" } 
-        }
-      );
-    }
-    
-    if (modelType === "txagent") {
-      console.log("TxAgent API key configured:", runpodApiKey ? "YES" : "NO");
-      console.log("TxAgent endpoint:", TXAGENT_BASE_URL);
-    }
+          if (modelType === "txagent") {
+        // TxAgent now uses the GCP gateway for authentication
+        console.log("TxAgent using GCP auth gateway:", gcpGatewayUrl);
+      }
     
     if (modelType === "openai" && !openAIApiKey) {
       console.error("OpenAI API key not configured");
@@ -139,7 +129,8 @@ serve(async (req) => {
         threadId,
         generateDocument,
         isDocumentEdit,
-        drugName
+        drugName,
+        supabaseToken
       });
     } else {
       return await handleOpenAIRequest({
@@ -215,7 +206,8 @@ async function handleTxAgentRequest({
   threadId,
   generateDocument,
   isDocumentEdit,
-  drugName
+  drugName,
+  supabaseToken
 }: any) {
   try {
     // Normalize drug name for better processing
@@ -321,18 +313,15 @@ Generate the complete document now:`;
         setTimeout(() => reject(new Error(`TxAgent request timeout after ${timeout/1000}s`)), timeout)
       );
       
-      const responsePromise = fetch(`${TXAGENT_BASE_URL}/chat/completions`, {
+             const responsePromise = fetch(gcpGatewayUrl, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${runpodApiKey}`,
+          "Authorization": `Bearer ${supabaseToken}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: TXAGENT_MODEL,
-          messages: [
-            { role: "user", content: prompt }
-          ],
-          max_tokens: generateDocument ? 2200 : 800, // Allow up to ~5 pages of markdown
+          prompt: prompt,
+          max_tokens: generateDocument ? 2200 : 800,
           temperature: 0.1
         })
       });
@@ -353,11 +342,19 @@ Generate the complete document now:`;
       : await makeRequest();
     const data = await response.json();
     
-    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-      throw new Error('Invalid response format from TxAgent');
+    if (!data.success || !data.data) {
+      throw new Error('Invalid response format from TxAgent gateway');
     }
     
-    let messageContent = data.choices[0].message.content;
+    // Extract content from the gateway response
+    let messageContent;
+    if (data.data.choices && data.data.choices[0] && data.data.choices[0].message) {
+      messageContent = data.data.choices[0].message.content;
+    } else if (data.data.output) {
+      messageContent = data.data.output;
+    } else {
+      throw new Error('No valid content found in TxAgent response');
+    }
     
     if (!messageContent || messageContent.trim().length === 0) {
       throw new Error('Empty response from TxAgent');
@@ -390,23 +387,29 @@ ${REQUIRED_SECTIONS.map(s=>`- ${s}`).join('\n')}
 Do NOT deviate from the template or add extra sections.  Fill every section with detailed, actionable clinical content suitable for hospital pharmacists and clinicians.`;
 
           try {
-            const retryResponse = await fetch(`${TXAGENT_BASE_URL}/chat/completions`, {
-              method: "POST",
-              headers: {
-                "Authorization": `Bearer ${runpodApiKey}`,
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify({
-                model: TXAGENT_MODEL,
-                messages: [{ role: "user", content: enhancedPrompt }],
-                max_tokens: 2500,
-                temperature: 0.1
-              })
+                         const retryResponse = await fetch(gcpGatewayUrl, {
+                method: "POST",
+                headers: {
+                  "Authorization": `Bearer ${supabaseToken}`,
+                  "Content-Type": "application/json"
+                },
+                              body: JSON.stringify({
+                  prompt: enhancedPrompt,
+                  max_tokens: 2500,
+                  temperature: 0.1
+                })
             });
             
             if (retryResponse.ok) {
               const retryData = await retryResponse.json();
-              const retryContent = retryData.choices?.[0]?.message?.content;
+              let retryContent;
+              if (retryData.success && retryData.data) {
+                if (retryData.data.choices && retryData.data.choices[0] && retryData.data.choices[0].message) {
+                  retryContent = retryData.data.choices[0].message.content;
+                } else if (retryData.data.output) {
+                  retryContent = retryData.data.output;
+                }
+              }
               if (retryContent && retryContent.length > messageContent.length) {
                 console.log('Enhanced prompt retry successful, using improved response');
                 messageContent = retryContent;
